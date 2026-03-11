@@ -63,6 +63,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   final Map<int, SelectionListenerNotifier> _selectionNotifiers =
       <int, SelectionListenerNotifier>{};
   final Map<int, String> _selectedTextByChapter = <int, String>{};
+  int? _pendingSecondaryHighlightChapter;
 
   Timer? _saveDebounce;
   List<ReaderAnnotation> _annotations = <ReaderAnnotation>[];
@@ -75,6 +76,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   bool _isLoadingNextChapter = false;
   bool _isLoadingPreviousChapter = false;
   bool _isRestoringPosition = false;
+  int _selectionResetVersion = 0;
   String? _errorMessage;
 
   bool get _hasLoadedContent => _endIndex >= _startIndex;
@@ -567,6 +569,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   Future<void> _jumpToChapter(int chapterIndex) async {
+    _resetTransientSelection();
     final int start = math.max(0, chapterIndex - 1);
     final int end = math.min(widget.book.chapterCount - 1, chapterIndex + 1);
     final Map<int, String> selectedContents = <int, String>{};
@@ -675,39 +678,81 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     return notifier.selection.range;
   }
 
-  Future<void> _saveSelectionAsAnnotation(
-    int chapterIndex, {
-    required bool withNote,
-  }) async {
+  _ChapterSelectionSnapshot? _selectionSnapshotForChapter(int chapterIndex) {
     final String selectedText =
         (_selectedTextByChapter[chapterIndex] ?? '').trim();
     final SelectedContentRange? range = _selectedRangeForChapter(chapterIndex);
     if (selectedText.isEmpty ||
         range == null ||
         range.startOffset == range.endOffset) {
+      return null;
+    }
+
+    return _ChapterSelectionSnapshot(
+      chapterIndex: chapterIndex,
+      selectedText: selectedText,
+      startOffset: math.min(range.startOffset, range.endOffset),
+      endOffset: math.max(range.startOffset, range.endOffset),
+    );
+  }
+
+  void _resetTransientSelection() {
+    if (!mounted) {
       return;
     }
 
-    final Chapter chapter = widget.book.chapters[chapterIndex];
-    final int startOffset = math.min(range.startOffset, range.endOffset);
-    final int endOffset = math.max(range.startOffset, range.endOffset);
+    final List<SelectionListenerNotifier> staleNotifiers =
+        _selectionNotifiers.values.toList(growable: false);
+    _selectionNotifiers.clear();
+
+    setState(() {
+      _selectedTextByChapter.clear();
+      _pendingSecondaryHighlightChapter = null;
+      _selectionResetVersion++;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final SelectionListenerNotifier notifier in staleNotifiers) {
+        notifier.dispose();
+      }
+    });
+  }
+
+  bool _shouldUseSecondaryClickShortcut(BuildContext context) {
+    switch (Theme.of(context).platform) {
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+      case TargetPlatform.macOS:
+        return true;
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.fuchsia:
+        return false;
+    }
+  }
+
+  Future<void> _saveSelectionAsAnnotationFromSnapshot(
+    _ChapterSelectionSnapshot snapshot, {
+    required bool withNote,
+  }) async {
+    final Chapter chapter = widget.book.chapters[snapshot.chapterIndex];
     final ReaderAnnotation? annotation = withNote
         ? await _showAnnotationDialog(
-            chapterIndex: chapterIndex,
+            chapterIndex: snapshot.chapterIndex,
             chapter: chapter,
-            selectedText: selectedText,
-            startOffset: startOffset,
-            endOffset: endOffset,
+            selectedText: snapshot.selectedText,
+            startOffset: snapshot.startOffset,
+            endOffset: snapshot.endOffset,
             requireNote: true,
           )
         : ReaderAnnotation(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
             bookId: widget.book.id,
-            chapterIndex: chapterIndex,
+            chapterIndex: snapshot.chapterIndex,
             chapterTitle: chapter.title,
-            startOffset: startOffset,
-            endOffset: endOffset,
-            selectedText: selectedText,
+            startOffset: snapshot.startOffset,
+            endOffset: snapshot.endOffset,
+            selectedText: snapshot.selectedText,
             createdAt: DateTime.now(),
             color: ReaderHighlightColor.amber,
           );
@@ -717,7 +762,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
     await widget.annotationService.saveAnnotation(annotation);
     await _refreshAnnotations();
-    _selectedTextByChapter.remove(chapterIndex);
+    _resetTransientSelection();
     if (!mounted) {
       return;
     }
@@ -1137,14 +1182,32 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
           },
           onDarkModeChanged: (bool enabled) {
             unawaited(
-              widget.onThemeModeChanged(
-                enabled ? ThemeMode.dark : ThemeMode.light,
-              ),
-            );
+                _applyThemeMode(enabled ? ThemeMode.dark : ThemeMode.light));
           },
         );
       },
     );
+  }
+
+  Future<void> _applyThemeMode(ThemeMode themeMode) async {
+    ReaderPreferences nextPreferences = _preferences;
+    final bool wantsDarkMode = themeMode == ThemeMode.dark;
+    if (_preferences.backgroundPreset.isDark != wantsDarkMode) {
+      nextPreferences = _preferences.copyWith(
+        backgroundPreset: wantsDarkMode
+            ? ReaderBackgroundPreset.graphite
+            : ReaderBackgroundPreset.parchment,
+      );
+    }
+
+    if (nextPreferences != _preferences) {
+      setState(() {
+        _preferences = nextPreferences;
+      });
+      await widget.progressService.saveReaderPreferences(nextPreferences);
+    }
+
+    await widget.onThemeModeChanged(themeMode);
   }
 
   double _clampDouble(double value, double min, double max) {
@@ -1265,7 +1328,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                 : 'Modo escuro',
             onPressed: () {
               unawaited(
-                widget.onThemeModeChanged(
+                _applyThemeMode(
                   Theme.of(context).brightness == Brightness.dark
                       ? ThemeMode.light
                       : ThemeMode.dark,
@@ -1385,73 +1448,108 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    SelectionArea(
-                      onSelectionChanged: (SelectedContent? selectedContent) {
-                        final String selectedText =
-                            selectedContent?.plainText.trim() ?? '';
-                        if (selectedText.isEmpty) {
-                          _selectedTextByChapter.remove(chapterIndex);
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onSecondaryTapDown: (_) {
+                        if (_shouldUseSecondaryClickShortcut(context) &&
+                            _selectionSnapshotForChapter(chapterIndex) !=
+                                null) {
+                          _pendingSecondaryHighlightChapter = chapterIndex;
                         } else {
-                          _selectedTextByChapter[chapterIndex] = selectedText;
+                          _pendingSecondaryHighlightChapter = null;
                         }
                       },
-                      contextMenuBuilder: (
-                        BuildContext context,
-                        SelectableRegionState selectableRegionState,
-                      ) {
-                        final List<ContextMenuButtonItem> buttonItems =
-                            List<ContextMenuButtonItem>.from(
-                          selectableRegionState.contextMenuButtonItems,
-                        );
-                        final String selectedText =
-                            (_selectedTextByChapter[chapterIndex] ?? '').trim();
-                        if (selectedText.isNotEmpty) {
-                          buttonItems.addAll(<ContextMenuButtonItem>[
-                            ContextMenuButtonItem(
-                              label: 'Destacar',
-                              onPressed: () {
-                                ContextMenuController.removeAny();
-                                unawaited(
-                                  _saveSelectionAsAnnotation(
-                                    chapterIndex,
-                                    withNote: false,
-                                  ),
-                                );
-                                selectableRegionState.clearSelection();
-                              },
-                            ),
-                            ContextMenuButtonItem(
-                              label: 'Anotar',
-                              onPressed: () {
-                                ContextMenuController.removeAny();
-                                unawaited(
-                                  _saveSelectionAsAnnotation(
-                                    chapterIndex,
-                                    withNote: true,
-                                  ),
-                                );
-                                selectableRegionState.clearSelection();
-                              },
-                            ),
-                          ]);
-                        }
+                      child: SelectionArea(
+                        key: ValueKey<String>(
+                          'selection-$chapterIndex-$_selectionResetVersion',
+                        ),
+                        onSelectionChanged: (SelectedContent? selectedContent) {
+                          final String selectedText =
+                              selectedContent?.plainText.trim() ?? '';
+                          if (selectedText.isEmpty) {
+                            _selectedTextByChapter.remove(chapterIndex);
+                          } else {
+                            _selectedTextByChapter[chapterIndex] = selectedText;
+                          }
+                        },
+                        contextMenuBuilder: (
+                          BuildContext context,
+                          SelectableRegionState selectableRegionState,
+                        ) {
+                          final _ChapterSelectionSnapshot? snapshot =
+                              _selectionSnapshotForChapter(chapterIndex);
+                          final bool shouldAutoHighlight =
+                              _pendingSecondaryHighlightChapter ==
+                                      chapterIndex &&
+                                  _shouldUseSecondaryClickShortcut(context) &&
+                                  snapshot != null;
+                          if (shouldAutoHighlight) {
+                            _pendingSecondaryHighlightChapter = null;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              ContextMenuController.removeAny();
+                              selectableRegionState.clearSelection();
+                              unawaited(
+                                _saveSelectionAsAnnotationFromSnapshot(
+                                  snapshot,
+                                  withNote: false,
+                                ),
+                              );
+                            });
+                            return const SizedBox.shrink();
+                          }
 
-                        return AdaptiveTextSelectionToolbar.buttonItems(
-                          anchors: selectableRegionState.contextMenuAnchors,
-                          buttonItems: buttonItems,
-                        );
-                      },
-                      child: SelectionListener(
-                        selectionNotifier: _notifierForChapter(chapterIndex),
-                        child: Text.rich(
-                          TextSpan(
-                            children: _buildAnnotatedSpans(
-                              content,
-                              chapterAnnotations,
-                              readerTextStyle,
+                          final List<ContextMenuButtonItem> buttonItems =
+                              List<ContextMenuButtonItem>.from(
+                            selectableRegionState.contextMenuButtonItems,
+                          );
+                          if (snapshot != null) {
+                            buttonItems.addAll(<ContextMenuButtonItem>[
+                              ContextMenuButtonItem(
+                                label: 'Destacar',
+                                onPressed: () {
+                                  ContextMenuController.removeAny();
+                                  selectableRegionState.clearSelection();
+                                  unawaited(
+                                    _saveSelectionAsAnnotationFromSnapshot(
+                                      snapshot,
+                                      withNote: false,
+                                    ),
+                                  );
+                                },
+                              ),
+                              ContextMenuButtonItem(
+                                label: 'Anotar',
+                                onPressed: () {
+                                  ContextMenuController.removeAny();
+                                  selectableRegionState.clearSelection();
+                                  unawaited(
+                                    _saveSelectionAsAnnotationFromSnapshot(
+                                      snapshot,
+                                      withNote: true,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ]);
+                          }
+
+                          return AdaptiveTextSelectionToolbar.buttonItems(
+                            anchors: selectableRegionState.contextMenuAnchors,
+                            buttonItems: buttonItems,
+                          );
+                        },
+                        child: SelectionListener(
+                          selectionNotifier: _notifierForChapter(chapterIndex),
+                          child: Text.rich(
+                            TextSpan(
+                              children: _buildAnnotatedSpans(
+                                content,
+                                chapterAnnotations,
+                                readerTextStyle,
+                              ),
                             ),
+                            textAlign: _preferences.textAlignPreset.textAlign,
                           ),
-                          textAlign: _preferences.textAlignPreset.textAlign,
                         ),
                       ),
                     ),
@@ -1842,4 +1940,18 @@ class _ReaderSidePanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ChapterSelectionSnapshot {
+  const _ChapterSelectionSnapshot({
+    required this.chapterIndex,
+    required this.selectedText,
+    required this.startOffset,
+    required this.endOffset,
+  });
+
+  final int chapterIndex;
+  final String selectedText;
+  final int startOffset;
+  final int endOffset;
 }

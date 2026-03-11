@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -26,39 +27,50 @@ class ProgressService {
   final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
   String _activeProfileId = 'principal';
+  Future<void> _pendingOperation = Future<void>.value();
 
   void configureProfile(String profileId) {
     _activeProfileId = profileId;
   }
 
   Future<ThemeMode> loadThemeMode() async {
-    final _ProgressState state = await _loadState();
-    switch (state.themeMode) {
-      case 'light':
-        return ThemeMode.light;
-      case 'dark':
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.dark;
-    }
+    return _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      switch (state.themeMode) {
+        case 'light':
+          return ThemeMode.light;
+        case 'dark':
+          return ThemeMode.dark;
+        default:
+          return ThemeMode.dark;
+      }
+    });
   }
 
   Future<void> saveThemeMode(ThemeMode themeMode) async {
-    final _ProgressState state = await _loadState();
-    final _ProgressState nextState = state.copyWith(
-      themeMode: themeMode == ThemeMode.light ? 'light' : 'dark',
-    );
-    await _saveState(nextState);
+    await _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      final _ProgressState nextState = state.copyWith(
+        themeMode: themeMode == ThemeMode.light ? 'light' : 'dark',
+      );
+      await _saveStateUnsafe(nextState);
+    });
   }
 
   Future<ReaderPreferences> loadReaderPreferences() async {
-    final _ProgressState state = await _loadState();
-    return state.readerPreferences;
+    return _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      return state.readerPreferences;
+    });
   }
 
   Future<void> saveReaderPreferences(ReaderPreferences preferences) async {
-    final _ProgressState state = await _loadState();
-    await _saveState(state.copyWith(readerPreferences: preferences));
+    await _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      await _saveStateUnsafe(
+        state.copyWith(readerPreferences: preferences),
+      );
+    });
   }
 
   Future<double> loadFontSize() async {
@@ -100,63 +112,144 @@ class ProgressService {
   }
 
   Future<BookReference?> loadLastBookReference() async {
-    final _ProgressState state = await _loadState();
-    return state.lastBookReference;
+    return _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      return state.lastBookReference;
+    });
   }
 
   Future<void> saveLastBookReference(BookReference reference) async {
-    final _ProgressState state = await _loadState();
-    await _saveState(state.copyWith(lastBookReference: reference));
+    await _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      await _saveStateUnsafe(state.copyWith(lastBookReference: reference));
+    });
   }
 
   Future<ReadingProgress?> loadProgress(String bookId) async {
-    final _ProgressState state = await _loadState();
-    final dynamic raw = state.progresses[_encodeBookId(bookId)];
-    if (raw is! Map<String, dynamic>) {
-      return null;
-    }
-    return ReadingProgress.fromJson(raw);
+    return _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      final dynamic raw = state.progresses[_encodeBookId(bookId)];
+      if (raw is! Map<String, dynamic>) {
+        return null;
+      }
+      return ReadingProgress.fromJson(raw);
+    });
   }
 
   Future<void> saveProgress(String bookId, ReadingProgress progress) async {
-    final _ProgressState state = await _loadState();
-    final Map<String, Map<String, dynamic>> nextProgresses =
-        Map<String, Map<String, dynamic>>.from(state.progresses);
-    nextProgresses[_encodeBookId(bookId)] = progress.toJson();
-    await _saveState(state.copyWith(progresses: nextProgresses));
+    await _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      final Map<String, Map<String, dynamic>> nextProgresses =
+          Map<String, Map<String, dynamic>>.from(state.progresses);
+      nextProgresses[_encodeBookId(bookId)] = progress.toJson();
+      await _saveStateUnsafe(state.copyWith(progresses: nextProgresses));
+    });
   }
 
   Future<Map<String, dynamic>> exportState() async {
-    final _ProgressState state = await _loadState();
-    return state.toJson();
+    return _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      return state.toJson();
+    });
   }
 
   Future<void> importState(Map<String, dynamic> json) async {
-    await _saveState(_ProgressState.fromJson(json));
+    await _runSerialized(() async {
+      await _saveStateUnsafe(_ProgressState.fromJson(json));
+    });
   }
 
-  Future<_ProgressState> _loadState() async {
+  Future<T> _runSerialized<T>(Future<T> Function() operation) {
+    final Completer<T> completer = Completer<T>();
+    _pendingOperation =
+        _pendingOperation.catchError((Object _) {}).then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<_ProgressState> _loadStateUnsafe() async {
     final File file = await _stateFile();
     if (!await file.exists()) {
       final _ProgressState migrated = await _migrateLegacyStateIfAvailable();
-      await _saveState(migrated);
+      await _saveStateUnsafe(migrated);
       return migrated;
     }
 
     final String raw = await file.readAsString();
     if (raw.trim().isEmpty) {
-      return _ProgressState.defaults();
+      final _ProgressState defaults = _ProgressState.defaults();
+      await _saveStateUnsafe(defaults);
+      return defaults;
     }
 
-    final dynamic decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) {
-      return _ProgressState.defaults();
+    final Map<String, dynamic>? decoded = _tryDecodeStatePayload(raw);
+    if (decoded != null) {
+      final _ProgressState state = _ProgressState.fromJson(decoded);
+      final String normalized = jsonEncode(state.toJson());
+      if (normalized != raw) {
+        await _saveStateUnsafe(state);
+      }
+      return state;
     }
 
-    return _ProgressState.fromJson(decoded);
+    return _recoverStateFromCorruption(file, raw);
   }
 
-  Future<void> _saveState(_ProgressState state) async {
+  Future<_ProgressState> _recoverStateFromCorruption(
+    File file,
+    String raw,
+  ) async {
+    final _ProgressState recovered = await _migrateLegacyStateIfAvailable();
+    final String timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
+    final File backupFile = File(
+      p.join(
+        file.parent.path,
+        'progress_state.corrupt.$timestamp.json',
+      ),
+    );
+    await backupFile.writeAsString(raw, flush: true);
+    await _saveStateUnsafe(recovered);
+    return recovered;
+  }
+
+  Map<String, dynamic>? _tryDecodeStatePayload(String raw) {
+    final String trimmed = raw.trim();
+    final dynamic exact = _tryJsonDecode(trimmed);
+    if (exact is Map<String, dynamic>) {
+      return exact;
+    }
+
+    for (int index = trimmed.length - 1; index >= 0; index--) {
+      if (trimmed.codeUnitAt(index) != 0x7D) {
+        continue;
+      }
+
+      final dynamic candidate = _tryJsonDecode(trimmed.substring(0, index + 1));
+      if (candidate is Map<String, dynamic>) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  dynamic _tryJsonDecode(String raw) {
+    try {
+      return jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> _saveStateUnsafe(_ProgressState state) async {
     final File file = await _stateFile();
     await file.parent.create(recursive: true);
     await file.writeAsString(
