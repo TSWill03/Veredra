@@ -8,6 +8,8 @@ import '../models/book_format.dart';
 import '../models/book_reference.dart';
 import '../models/library_entry.dart';
 import '../models/reader_font_preset.dart';
+import '../models/translation_pair.dart';
+import '../models/translation_progress.dart';
 import '../services/annotation_service.dart';
 import '../services/backup_service.dart';
 import '../services/bookmark_service.dart';
@@ -15,6 +17,9 @@ import '../services/book_service.dart';
 import '../services/library_service.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
+import '../services/translation_service.dart';
+import '../widgets/book_translation_dialog.dart';
+import '../widgets/translation_progress_dialog.dart';
 import 'pdf_reader_page.dart';
 import 'reader_page.dart';
 
@@ -31,6 +36,7 @@ class LibraryPage extends StatefulWidget {
     required this.bookmarkService,
     required this.libraryService,
     required this.progressService,
+    required this.translationService,
     required this.lastBookReference,
     required this.fontSize,
     required this.readerFontPreset,
@@ -49,6 +55,7 @@ class LibraryPage extends StatefulWidget {
   final BookmarkService bookmarkService;
   final LibraryService libraryService;
   final ProgressService progressService;
+  final TranslationService translationService;
   final BookReference? lastBookReference;
   final double fontSize;
   final ReaderFontPreset readerFontPreset;
@@ -366,6 +373,93 @@ class _LibraryPageState extends State<LibraryPage> {
     await widget.libraryService.remove(entry.id);
     await _refreshLibrary();
     _showMessage('Livro removido da biblioteca local.');
+  }
+
+  Future<void> _translateEntry(LibraryEntry entry) async {
+    if (!entry.reference.usesTextReader) {
+      _showMessage(
+          'A traducao local do MVP funciona apenas em livros textuais e EPUB convertido.');
+      return;
+    }
+
+    final TranslationPair? pair = await showDialog<TranslationPair>(
+      context: context,
+      builder: (BuildContext context) {
+        return BookTranslationDialog(
+          bookTitle: entry.title,
+          translationService: widget.translationService,
+        );
+      },
+    );
+    if (pair == null || !mounted) {
+      return;
+    }
+
+    final ValueNotifier<TranslationProgress> progressNotifier =
+        ValueNotifier<TranslationProgress>(
+      const TranslationProgress(
+        stage: 'Preparando traducao',
+        completedChapters: 0,
+        totalChapters: 1,
+      ),
+    );
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return ValueListenableBuilder<TranslationProgress>(
+          valueListenable: progressNotifier,
+          builder: (
+            BuildContext context,
+            TranslationProgress value,
+            Widget? child,
+          ) {
+            return TranslationProgressDialog(
+              bookTitle: entry.title,
+              progress: value,
+            );
+          },
+        );
+      },
+    );
+
+    try {
+      final Book sourceBook =
+          await widget.bookService.reopenBook(entry.reference);
+      final Book translatedBook = await widget.translationService.translateBook(
+        sourceBook: sourceBook,
+        sourceLanguage: pair.source,
+        targetLanguage: pair.target,
+        bookService: widget.bookService,
+        onProgress: (TranslationProgress value) {
+          progressNotifier.value = value;
+        },
+      );
+
+      await widget.libraryService.upsertBook(translatedBook);
+      await _refreshLibrary();
+      if (!mounted) {
+        return;
+      }
+      final NavigatorState navigator = Navigator.of(context);
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+      _showMessage(
+        'Nova copia traduzida criada: ${translatedBook.title}',
+      );
+    } catch (error) {
+      if (mounted) {
+        final NavigatorState navigator = Navigator.of(context);
+        if (navigator.canPop()) {
+          navigator.pop();
+        }
+        _showMessage(error.toString());
+      }
+    } finally {
+      progressNotifier.dispose();
+    }
   }
 
   Future<bool> _confirmRemoveEntry(LibraryEntry entry) async {
@@ -1193,6 +1287,7 @@ class _LibraryPageState extends State<LibraryPage> {
     return _LibraryBookCard(
       entry: entry,
       onOpen: () => _openLibraryEntry(entry),
+      onTranslate: () => _translateEntry(entry),
       onRename: () => _renameEntry(entry),
       onEditMetadata: () => _editMetadata(entry),
       onUpdateCover: () => _changeCover(entry),
@@ -1207,6 +1302,7 @@ class _LibraryBookCard extends StatelessWidget {
   const _LibraryBookCard({
     required this.entry,
     required this.onOpen,
+    required this.onTranslate,
     required this.onRename,
     required this.onEditMetadata,
     required this.onUpdateCover,
@@ -1217,6 +1313,7 @@ class _LibraryBookCard extends StatelessWidget {
 
   final LibraryEntry entry;
   final VoidCallback onOpen;
+  final VoidCallback onTranslate;
   final VoidCallback onRename;
   final VoidCallback onEditMetadata;
   final VoidCallback onUpdateCover;
@@ -1283,6 +1380,9 @@ class _LibraryBookCard extends StatelessWidget {
                           case 'rename':
                             onRename();
                             break;
+                          case 'translate':
+                            onTranslate();
+                            break;
                           case 'metadata':
                             onEditMetadata();
                             break;
@@ -1299,6 +1399,11 @@ class _LibraryBookCard extends StatelessWidget {
                       },
                       itemBuilder: (BuildContext context) {
                         return <PopupMenuEntry<String>>[
+                          if (entry.reference.usesTextReader)
+                            const PopupMenuItem<String>(
+                              value: 'translate',
+                              child: Text('Traduzir livro'),
+                            ),
                           const PopupMenuItem<String>(
                             value: 'rename',
                             child: Text('Renomear livro'),

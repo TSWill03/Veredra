@@ -11,6 +11,7 @@ import 'services/book_service.dart';
 import 'services/library_service.dart';
 import 'services/profile_service.dart';
 import 'services/progress_service.dart';
+import 'services/translation_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,7 @@ class _TxtWebnovelReaderAppState extends State<TxtWebnovelReaderApp> {
   final ProgressService _progressService = ProgressService();
   final BookmarkService _bookmarkService = BookmarkService();
   final AnnotationService _annotationService = AnnotationService();
+  final TranslationService _translationService = TranslationService();
   late final BackupService _backupService = BackupService(
     profileService: _profileService,
     libraryService: _libraryService,
@@ -83,6 +85,7 @@ class _TxtWebnovelReaderAppState extends State<TxtWebnovelReaderApp> {
     _progressService.configureProfile(profileId);
     _bookmarkService.configureProfile(profileId);
     _annotationService.configureProfile(profileId);
+    _translationService.configureProfile(profileId);
   }
 
   Future<void> _handleThemeModeChanged(ThemeMode themeMode) async {
@@ -207,6 +210,7 @@ class _TxtWebnovelReaderAppState extends State<TxtWebnovelReaderApp> {
               bookmarkService: _bookmarkService,
               libraryService: _libraryService,
               progressService: _progressService,
+              translationService: _translationService,
               lastBookReference: _lastBookReference,
               fontSize: _fontSize,
               readerFontPreset: _readerFontPreset,

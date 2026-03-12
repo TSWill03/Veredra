@@ -17,6 +17,8 @@ import '../models/book_format.dart';
 import '../models/book_reference.dart';
 import '../models/book_search_match.dart';
 import '../models/chapter.dart';
+import '../models/generated_chapter.dart';
+import '../models/translation_language.dart';
 
 enum ImportKind { textFolder, textFiles, epub, pdf }
 
@@ -358,7 +360,7 @@ class BookService {
     final String title = (epubBookRef.Title ?? '').trim().isEmpty
         ? p.basenameWithoutExtension(normalizedPath)
         : epubBookRef.Title!.trim();
-    final List<_GeneratedChapter> generatedChapters =
+    final List<GeneratedChapter> generatedChapters =
         await _readEpubGeneratedChapters(epubBookRef);
 
     if (generatedChapters.isEmpty) {
@@ -438,6 +440,88 @@ class BookService {
       title: title,
       reference: reference,
       chapters: const <Chapter>[],
+    );
+  }
+
+  Future<List<GeneratedChapter>> exportBookChapters(Book book) async {
+    if (!book.usesTextReader) {
+      throw StateError('Este livro nao pode ser exportado como texto.');
+    }
+
+    final List<GeneratedChapter> chapters = <GeneratedChapter>[];
+    for (final Chapter chapter in book.chapters) {
+      chapters.add(
+        GeneratedChapter(
+          title: chapter.title,
+          content: await readChapterContent(chapter),
+        ),
+      );
+    }
+
+    return chapters;
+  }
+
+  Future<Book> createTranslatedBook({
+    required Book sourceBook,
+    required String title,
+    required List<GeneratedChapter> chapters,
+    required TranslationLanguage sourceLanguage,
+    required TranslationLanguage targetLanguage,
+    String? translatedDescription,
+  }) async {
+    final String normalizedTitle = title.trim().isEmpty
+        ? '${sourceBook.title} [${targetLanguage.label}]'
+        : title.trim();
+    final String translationId = _stableHash(
+      '${sourceBook.id}|${sourceLanguage.code}|${targetLanguage.code}|${DateTime.now().microsecondsSinceEpoch}',
+    );
+    final List<String> chapterPaths = await _writeManagedChapters(
+      baseFolderName: 'translated_books',
+      bookId: translationId,
+      chapters: chapters,
+    );
+
+    final Book book = await loadTextBookFromFiles(
+      chapterPaths,
+      preferredTitle: normalizedTitle,
+      sourceLabel:
+          'Traducao local ${sourceLanguage.label} -> ${targetLanguage.label}',
+      preferredCoverPath: sourceBook.reference.coverPath,
+      copyToManagedStorage: false,
+      format: BookFormat.text,
+    );
+
+    final String? normalizedDescription =
+        _normalizeOptionalText(translatedDescription) ??
+            sourceBook.reference.description;
+    final List<String> tags = <String>[
+      ...sourceBook.reference.tags,
+      'traducao',
+      targetLanguage.label,
+    ]
+        .map((String value) => value.trim())
+        .where((String value) {
+          return value.isNotEmpty;
+        })
+        .toSet()
+        .toList(growable: false);
+
+    return _applyPreferredReference(
+      book,
+      BookReference(
+        title: normalizedTitle,
+        format: BookFormat.text,
+        sourceLabel:
+            'Traducao local ${sourceLanguage.label} -> ${targetLanguage.label}',
+        coverPath: sourceBook.reference.coverPath,
+        author: sourceBook.reference.author,
+        description: normalizedDescription,
+        series: sourceBook.reference.series,
+        volume: sourceBook.reference.volume,
+        altTitle: sourceBook.title,
+        tags: tags,
+        assetPaths: book.reference.assetPaths,
+      ),
     );
   }
 
@@ -530,10 +614,10 @@ class BookService {
     }
   }
 
-  Future<List<_GeneratedChapter>> _readEpubGeneratedChapters(
+  Future<List<GeneratedChapter>> _readEpubGeneratedChapters(
     EpubBookRef epubBookRef,
   ) async {
-    final List<_GeneratedChapter> chapters = <_GeneratedChapter>[];
+    final List<GeneratedChapter> chapters = <GeneratedChapter>[];
 
     try {
       final List<EpubChapterRef> chapterRefs = await epubBookRef.getChapters();
@@ -544,12 +628,12 @@ class BookService {
       // Se o TOC vier quebrado, fazemos fallback pelo spine.
     }
 
-    final List<_GeneratedChapter> filtered = _filterGeneratedChapters(chapters);
+    final List<GeneratedChapter> filtered = _filterGeneratedChapters(chapters);
     if (filtered.length >= 2) {
       return filtered;
     }
 
-    final List<_GeneratedChapter> fallback =
+    final List<GeneratedChapter> fallback =
         await _fallbackEpubChaptersFromSpine(epubBookRef);
     if (fallback.isNotEmpty) {
       return fallback;
@@ -558,13 +642,13 @@ class BookService {
     return filtered;
   }
 
-  Future<List<_GeneratedChapter>> _fallbackEpubChaptersFromSpine(
+  Future<List<GeneratedChapter>> _fallbackEpubChaptersFromSpine(
     EpubBookRef epubBookRef,
   ) async {
     final Map<String, dynamic> htmlFiles =
         epubBookRef.Content?.Html ?? const <String, dynamic>{};
     if (htmlFiles.isEmpty) {
-      return const <_GeneratedChapter>[];
+      return const <GeneratedChapter>[];
     }
 
     final Map<String, String> manifestById = <String, String>{
@@ -591,7 +675,7 @@ class BookService {
       }
     }
 
-    final List<_GeneratedChapter> output = <_GeneratedChapter>[];
+    final List<GeneratedChapter> output = <GeneratedChapter>[];
     for (final String href in orderedHrefs) {
       final dynamic fileRef = _resolveHtmlFileRef(htmlFiles, href);
       if (fileRef == null) {
@@ -606,7 +690,7 @@ class BookService {
       }
 
       output.add(
-        _GeneratedChapter(
+        GeneratedChapter(
           title: title,
           content: plainText,
         ),
@@ -638,12 +722,12 @@ class BookService {
     return null;
   }
 
-  List<_GeneratedChapter> _filterGeneratedChapters(
-    List<_GeneratedChapter> chapters,
+  List<GeneratedChapter> _filterGeneratedChapters(
+    List<GeneratedChapter> chapters,
   ) {
-    final List<_GeneratedChapter> filtered = chapters
+    final List<GeneratedChapter> filtered = chapters
         .where(
-          (_GeneratedChapter chapter) =>
+          (GeneratedChapter chapter) =>
               chapter.content.trim().isNotEmpty &&
               !_looksLikeBoilerplate(chapter.title, chapter.content),
         )
@@ -778,7 +862,7 @@ class BookService {
   Future<List<String>> _writeManagedChapters({
     required String baseFolderName,
     required String bookId,
-    required List<_GeneratedChapter> chapters,
+    required List<GeneratedChapter> chapters,
   }) async {
     final Directory bookDirectory = Directory(
       p.join((await _profileStorageDirectory(baseFolderName)).path, bookId),
@@ -945,7 +1029,7 @@ class BookService {
 
   void _flattenEpubChapters(
     List<EpubChapter> chapters,
-    List<_GeneratedChapter> output,
+    List<GeneratedChapter> output,
   ) {
     for (final EpubChapter chapter in chapters) {
       final String title = (chapter.Title ?? '').trim().isEmpty
@@ -954,7 +1038,7 @@ class BookService {
       final String plainText = _htmlToPlainText(chapter.HtmlContent ?? '');
       if (plainText.trim().isNotEmpty) {
         output.add(
-          _GeneratedChapter(
+          GeneratedChapter(
             title: title,
             content: plainText,
           ),
@@ -1236,16 +1320,6 @@ class _ChapterCandidate {
   final String fileName;
   final String title;
   final int? sortNumber;
-}
-
-class _GeneratedChapter {
-  const _GeneratedChapter({
-    required this.title,
-    required this.content,
-  });
-
-  final String title;
-  final String content;
 }
 
 class _EpubMetadataResult {
