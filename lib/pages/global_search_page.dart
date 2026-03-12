@@ -5,17 +5,17 @@ import 'package:flutter/material.dart';
 
 import '../models/library_entry.dart';
 import '../models/library_search_result.dart';
-import '../services/book_service.dart';
+import '../services/library_search_service.dart';
 
 class GlobalSearchPage extends StatefulWidget {
   const GlobalSearchPage({
     super.key,
     required this.entries,
-    required this.bookService,
+    required this.librarySearchService,
   });
 
   final List<LibraryEntry> entries;
-  final BookService bookService;
+  final LibrarySearchService librarySearchService;
 
   @override
   State<GlobalSearchPage> createState() => _GlobalSearchPageState();
@@ -75,7 +75,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
     });
 
     final List<LibrarySearchResult> results =
-        await widget.bookService.searchLibrary(widget.entries, query);
+        await widget.librarySearchService.search(widget.entries, query);
     if (!mounted || token != _searchToken) {
       return;
     }
@@ -113,7 +113,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
           ),
           const SizedBox(height: 14),
           Text(
-            'Pesquisa em metadados e tambem no conteudo dos livros textuais da sua biblioteca.',
+            'Pesquisa em metadados, conteudo, marcadores e destaques da sua biblioteca.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 18),
@@ -122,7 +122,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
               icon: Icons.manage_search_rounded,
               title: 'Digite pelo menos 2 caracteres',
               message:
-                  'Veredra procura por titulos, autores, tags e tambem trechos dentro dos livros que usam o leitor continuo.',
+                  'Veredra procura por titulos, autores, tags, trechos no conteudo, marcadores e comentarios das anotacoes.',
             )
           else if (_isSearching)
             const Padding(
@@ -166,7 +166,21 @@ class _ResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool isMetadata = result.source == LibrarySearchResultSource.metadata;
+    final IconData sourceIcon;
+    switch (result.source) {
+      case LibrarySearchResultSource.metadata:
+        sourceIcon = Icons.info_outline_rounded;
+        break;
+      case LibrarySearchResultSource.content:
+        sourceIcon = Icons.text_snippet_rounded;
+        break;
+      case LibrarySearchResultSource.bookmark:
+        sourceIcon = Icons.bookmark_rounded;
+        break;
+      case LibrarySearchResultSource.annotation:
+        sourceIcon = Icons.edit_note_rounded;
+        break;
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -178,11 +192,7 @@ class _ResultCard extends StatelessWidget {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         leading: CircleAvatar(
-          child: Icon(
-            isMetadata
-                ? Icons.info_outline_rounded
-                : Icons.text_snippet_rounded,
-          ),
+          child: Icon(sourceIcon),
         ),
         title: Text(result.bookTitle),
         subtitle: Padding(
@@ -198,7 +208,7 @@ class _ResultCard extends StatelessWidget {
                     label: Text(result.sourceLabel),
                     visualDensity: VisualDensity.compact,
                   ),
-                  if (!isMetadata)
+                  if (result.source != LibrarySearchResultSource.metadata)
                     Chip(
                       label: Text('${result.matchCount} ocorrencia(s)'),
                       visualDensity: VisualDensity.compact,

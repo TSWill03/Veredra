@@ -79,6 +79,14 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
         _stats.values.where((value) => value.openedCount > 0).length;
     final int favorites =
         widget.entries.where((entry) => entry.isFavorite).length;
+    final Map<String, int> aggregatedDaily = _aggregateDailySeconds();
+    final DateTime now = DateTime.now();
+    final int todaySeconds =
+        aggregatedDaily[BookReadingStats.dateKey(now)] ?? 0;
+    final int weekSeconds = _aggregateLastDays(aggregatedDaily, 7, now);
+    final int streakDays = _aggregateStreak(aggregatedDaily, now);
+    final List<_DailyReadingView> lastWeek =
+        _lastWeekViews(aggregatedDaily, now);
 
     return Scaffold(
       appBar: AppBar(
@@ -97,6 +105,21 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                       title: 'Tempo total',
                       value: _formatDuration(totalSeconds),
                       subtitle: 'Tempo somado das leituras registradas.',
+                    ),
+                    _StatCard(
+                      title: 'Hoje',
+                      value: _formatDuration(todaySeconds),
+                      subtitle: 'Leitura acumulada de hoje.',
+                    ),
+                    _StatCard(
+                      title: 'Ultimos 7 dias',
+                      value: _formatDuration(weekSeconds),
+                      subtitle: 'Quanto voce leu nesta semana.',
+                    ),
+                    _StatCard(
+                      title: 'Sequencia',
+                      value: '$streakDays dia(s)',
+                      subtitle: 'Dias seguidos com leitura.',
                     ),
                     _StatCard(
                       title: 'Sessoes',
@@ -137,6 +160,52 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                Text('Ultimos 7 dias', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    children: <Widget>[
+                      for (final _DailyReadingView day in lastWeek) ...<Widget>[
+                        Row(
+                          children: <Widget>[
+                            SizedBox(
+                              width: 62,
+                              child: Text(
+                                day.label,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  minHeight: 10,
+                                  value: day.ratio,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 72,
+                              child: Text(
+                                _formatDuration(day.seconds),
+                                textAlign: TextAlign.right,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (day != lastWeek.last) const SizedBox(height: 12),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
                 Text('Livros mais lidos', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 12),
                 if (rankedBooks.isEmpty)
@@ -165,6 +234,99 @@ class _ReadingStatsPageState extends State<ReadingStatsPage> {
     }
     return '${hours}h ${minutes}min';
   }
+
+  Map<String, int> _aggregateDailySeconds() {
+    final Map<String, int> result = <String, int>{};
+    for (final BookReadingStats stats in _stats.values) {
+      for (final MapEntry<String, int> entry in stats.dailySeconds.entries) {
+        result[entry.key] = (result[entry.key] ?? 0) + entry.value;
+      }
+    }
+    return result;
+  }
+
+  int _aggregateLastDays(Map<String, int> daily, int days, DateTime now) {
+    int total = 0;
+    for (int offset = 0; offset < days; offset++) {
+      final DateTime date = now.subtract(Duration(days: offset));
+      total += daily[BookReadingStats.dateKey(date)] ?? 0;
+    }
+    return total;
+  }
+
+  int _aggregateStreak(Map<String, int> daily, DateTime now) {
+    int streak = 0;
+    for (int offset = 0;; offset++) {
+      final DateTime date = now.subtract(Duration(days: offset));
+      if ((daily[BookReadingStats.dateKey(date)] ?? 0) <= 0) {
+        break;
+      }
+      streak++;
+    }
+    return streak;
+  }
+
+  List<_DailyReadingView> _lastWeekViews(Map<String, int> daily, DateTime now) {
+    final List<_DailyReadingView> items = <_DailyReadingView>[];
+    int maxSeconds = 0;
+    for (int offset = 6; offset >= 0; offset--) {
+      final DateTime date = now.subtract(Duration(days: offset));
+      final int seconds = daily[BookReadingStats.dateKey(date)] ?? 0;
+      if (seconds > maxSeconds) {
+        maxSeconds = seconds;
+      }
+      items.add(
+        _DailyReadingView(
+          label: _weekdayLabel(date.weekday),
+          seconds: seconds,
+          ratio: 0,
+        ),
+      );
+    }
+
+    final int effectiveMax = maxSeconds <= 0 ? 1 : maxSeconds;
+    return items
+        .map(
+          (item) => _DailyReadingView(
+            label: item.label,
+            seconds: item.seconds,
+            ratio: item.seconds / effectiveMax,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  String _weekdayLabel(int weekday) {
+    switch (weekday) {
+      case DateTime.monday:
+        return 'Seg';
+      case DateTime.tuesday:
+        return 'Ter';
+      case DateTime.wednesday:
+        return 'Qua';
+      case DateTime.thursday:
+        return 'Qui';
+      case DateTime.friday:
+        return 'Sex';
+      case DateTime.saturday:
+        return 'Sab';
+      case DateTime.sunday:
+        return 'Dom';
+    }
+    return '--';
+  }
+}
+
+class _DailyReadingView {
+  const _DailyReadingView({
+    required this.label,
+    required this.seconds,
+    required this.ratio,
+  });
+
+  final String label;
+  final int seconds;
+  final double ratio;
 }
 
 class _BookStatsView {
