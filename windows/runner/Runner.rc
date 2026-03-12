@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "txt_webnovel_reader" "\0"
+            VALUE "CompanyName", "dev.tswicolly03" "\0"
+            VALUE "FileDescription", "Veredra" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "txt_webnovel_reader" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "InternalName", "Veredra" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 dev.tswicolly03. All rights reserved." "\0"
             VALUE "OriginalFilename", "txt_webnovel_reader.exe" "\0"
-            VALUE "ProductName", "txt_webnovel_reader" "\0"
+            VALUE "ProductName", "Veredra" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
@@ -606,7 +607,7 @@ class BookService {
         .toSet();
     final List<String> removableKeys = _chapterContentCache.keys
         .where((String key) => !keepKeys.contains(key))
-        .toList(growable: false);
+        .toList(growable: true);
 
     while (_chapterContentCache.length > _maxCachedChapterContents ~/ 2 &&
         removableKeys.isNotEmpty) {

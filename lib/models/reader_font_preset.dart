@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'package:flutter/material.dart';
 
 enum ReaderFontPreset { system, serif, sans, mono }

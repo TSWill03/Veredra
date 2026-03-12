@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 enum BookFormat { text, epub, pdf }
 
 extension BookFormatX on BookFormat {

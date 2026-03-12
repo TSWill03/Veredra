@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'book_reference.dart';
 
 class LibraryEntry {

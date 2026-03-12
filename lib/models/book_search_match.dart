@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 class BookSearchMatch {
   const BookSearchMatch({
     required this.chapterIndex,

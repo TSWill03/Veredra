@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'dart:convert';
 
 import 'reader_background_preset.dart';

@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'translation_pair.dart';
 
 class TranslationEngineStatus {

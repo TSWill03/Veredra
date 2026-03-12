@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 class TranslationLanguage {
   const TranslationLanguage({
     required this.code,

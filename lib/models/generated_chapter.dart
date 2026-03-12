@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 class GeneratedChapter {
   const GeneratedChapter({
     required this.title,

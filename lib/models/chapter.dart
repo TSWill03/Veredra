@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 class Chapter {
   const Chapter({
     required this.index,

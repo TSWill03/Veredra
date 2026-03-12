@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'package:flutter/material.dart';
 
 import '../models/reader_background_preset.dart';

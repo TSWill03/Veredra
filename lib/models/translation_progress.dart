@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 class TranslationProgress {
   const TranslationProgress({
     required this.stage,

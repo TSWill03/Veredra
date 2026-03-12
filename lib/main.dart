@@ -1,3 +1,4 @@
+// Signature: dev.tswicolly03
 import 'package:flutter/material.dart';
 
 import 'models/app_profile.dart';
@@ -12,20 +13,21 @@ import 'services/library_service.dart';
 import 'services/profile_service.dart';
 import 'services/progress_service.dart';
 import 'services/translation_service.dart';
+import 'widgets/app_watermark_overlay.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const TxtWebnovelReaderApp());
+  runApp(const VeredraApp());
 }
 
-class TxtWebnovelReaderApp extends StatefulWidget {
-  const TxtWebnovelReaderApp({super.key});
+class VeredraApp extends StatefulWidget {
+  const VeredraApp({super.key});
 
   @override
-  State<TxtWebnovelReaderApp> createState() => _TxtWebnovelReaderAppState();
+  State<VeredraApp> createState() => _VeredraAppState();
 }
 
-class _TxtWebnovelReaderAppState extends State<TxtWebnovelReaderApp> {
+class _VeredraAppState extends State<VeredraApp> {
   final ProfileService _profileService = ProfileService();
   final BookService _bookService = BookService();
   final LibraryService _libraryService = LibraryService();
@@ -195,11 +197,26 @@ class _TxtWebnovelReaderAppState extends State<TxtWebnovelReaderApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TXT Reader',
+      title: 'Veredra',
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
+      builder: (BuildContext context, Widget? child) {
+        if (child == null) {
+          return const SizedBox.shrink();
+        }
+
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            child,
+            const Positioned.fill(
+              child: AppWatermarkOverlay(),
+            ),
+          ],
+        );
+      },
       home: _isReady
           ? LibraryPage(
               currentProfile: _currentProfile!,
@@ -230,9 +247,21 @@ class _StartupPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    final ThemeData theme = Theme.of(context);
+
+    return Scaffold(
       body: Center(
-        child: CircularProgressIndicator(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const CircularProgressIndicator(),
+            const SizedBox(height: 18),
+            Text(
+              'Veredra',
+              style: theme.textTheme.titleLarge,
+            ),
+          ],
+        ),
       ),
     );
   }
