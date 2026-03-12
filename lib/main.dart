@@ -12,8 +12,8 @@ import 'services/book_service.dart';
 import 'services/library_service.dart';
 import 'services/profile_service.dart';
 import 'services/progress_service.dart';
+import 'services/reading_stats_service.dart';
 import 'services/translation_service.dart';
-import 'widgets/app_watermark_overlay.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +34,7 @@ class _VeredraAppState extends State<VeredraApp> {
   final ProgressService _progressService = ProgressService();
   final BookmarkService _bookmarkService = BookmarkService();
   final AnnotationService _annotationService = AnnotationService();
+  final ReadingStatsService _readingStatsService = ReadingStatsService();
   final TranslationService _translationService = TranslationService();
   late final BackupService _backupService = BackupService(
     profileService: _profileService,
@@ -41,6 +42,7 @@ class _VeredraAppState extends State<VeredraApp> {
     progressService: _progressService,
     bookmarkService: _bookmarkService,
     annotationService: _annotationService,
+    readingStatsService: _readingStatsService,
   );
 
   ThemeMode _themeMode = ThemeMode.dark;
@@ -87,6 +89,7 @@ class _VeredraAppState extends State<VeredraApp> {
     _progressService.configureProfile(profileId);
     _bookmarkService.configureProfile(profileId);
     _annotationService.configureProfile(profileId);
+    _readingStatsService.configureProfile(profileId);
     _translationService.configureProfile(profileId);
   }
 
@@ -202,21 +205,6 @@ class _VeredraAppState extends State<VeredraApp> {
       themeMode: _themeMode,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      builder: (BuildContext context, Widget? child) {
-        if (child == null) {
-          return const SizedBox.shrink();
-        }
-
-        return Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            child,
-            const Positioned.fill(
-              child: AppWatermarkOverlay(),
-            ),
-          ],
-        );
-      },
       home: _isReady
           ? LibraryPage(
               currentProfile: _currentProfile!,
@@ -227,6 +215,7 @@ class _VeredraAppState extends State<VeredraApp> {
               bookmarkService: _bookmarkService,
               libraryService: _libraryService,
               progressService: _progressService,
+              readingStatsService: _readingStatsService,
               translationService: _translationService,
               lastBookReference: _lastBookReference,
               fontSize: _fontSize,

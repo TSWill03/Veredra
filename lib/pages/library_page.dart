@@ -1,10 +1,12 @@
 // Signature: dev.tswicolly03
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../models/app_profile.dart';
 import '../models/book.dart';
+import '../models/book_open_request.dart';
 import '../models/book_format.dart';
 import '../models/book_reference.dart';
 import '../models/library_entry.dart';
@@ -18,13 +20,21 @@ import '../services/book_service.dart';
 import '../services/library_service.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
+import '../services/reading_stats_service.dart';
 import '../services/translation_service.dart';
+import '../widgets/app_watermark_overlay.dart';
 import '../widgets/book_translation_dialog.dart';
+import 'about_page.dart';
+import 'global_search_page.dart';
+import 'notes_overview_page.dart';
 import '../widgets/translation_progress_dialog.dart';
+import 'reading_stats_page.dart';
 import 'pdf_reader_page.dart';
 import 'reader_page.dart';
 
 enum _LibraryFilter { all, favorites, recent }
+
+enum _LibraryQuickAction { globalSearch, notes, stats, about }
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({
@@ -37,6 +47,7 @@ class LibraryPage extends StatefulWidget {
     required this.bookmarkService,
     required this.libraryService,
     required this.progressService,
+    required this.readingStatsService,
     required this.translationService,
     required this.lastBookReference,
     required this.fontSize,
@@ -56,6 +67,7 @@ class LibraryPage extends StatefulWidget {
   final BookmarkService bookmarkService;
   final LibraryService libraryService;
   final ProgressService progressService;
+  final ReadingStatsService readingStatsService;
   final TranslationService translationService;
   final BookReference? lastBookReference;
   final double fontSize;
@@ -225,7 +237,11 @@ class _LibraryPageState extends State<LibraryPage> {
     });
   }
 
-  Future<void> _openBook(Book book) async {
+  Future<void> _openBook(
+    Book book, {
+    int? initialChapterIndex,
+    double? initialChapterProgress,
+  }) async {
     await widget.progressService.saveLastBookReference(book.reference);
     await widget.onLastBookChanged(book.reference);
     await widget.libraryService.upsertBook(book, markOpened: true);
@@ -242,8 +258,11 @@ class _LibraryPageState extends State<LibraryPage> {
             annotationService: widget.annotationService,
             bookmarkService: widget.bookmarkService,
             progressService: widget.progressService,
+            readingStatsService: widget.readingStatsService,
             initialFontSize: widget.fontSize,
             initialReaderFontPreset: widget.readerFontPreset,
+            initialChapterIndex: initialChapterIndex,
+            initialChapterProgress: initialChapterProgress,
             onThemeModeChanged: widget.onThemeModeChanged,
             onFontSizeChanged: widget.onFontSizeChanged,
             onReaderFontPresetChanged: widget.onReaderFontPresetChanged,
@@ -261,6 +280,17 @@ class _LibraryPageState extends State<LibraryPage> {
     );
 
     await _refreshLibrary();
+  }
+
+  Future<void> _openBookRequest(BookOpenRequest request) async {
+    await _runBusyTask(() async {
+      final Book book = await widget.bookService.reopenBook(request.reference);
+      await _openBook(
+        book,
+        initialChapterIndex: request.chapterIndex,
+        initialChapterProgress: request.chapterProgress,
+      );
+    });
   }
 
   Future<void> _toggleFavorite(LibraryEntry entry) async {
@@ -518,6 +548,64 @@ class _LibraryPageState extends State<LibraryPage> {
     }
 
     await _importBook(selectedKind);
+  }
+
+  Future<void> _openQuickAction(_LibraryQuickAction action) async {
+    switch (action) {
+      case _LibraryQuickAction.globalSearch:
+        final BookOpenRequest? searchRequest =
+            await Navigator.of(context).push<BookOpenRequest>(
+          MaterialPageRoute<BookOpenRequest>(
+            builder: (BuildContext context) {
+              return GlobalSearchPage(
+                entries: _entries,
+                bookService: widget.bookService,
+              );
+            },
+          ),
+        );
+        if (searchRequest != null) {
+          await _openBookRequest(searchRequest);
+        }
+        break;
+      case _LibraryQuickAction.notes:
+        final BookOpenRequest? notesRequest =
+            await Navigator.of(context).push<BookOpenRequest>(
+          MaterialPageRoute<BookOpenRequest>(
+            builder: (BuildContext context) {
+              return NotesOverviewPage(
+                entries: _entries,
+                bookmarkService: widget.bookmarkService,
+                annotationService: widget.annotationService,
+              );
+            },
+          ),
+        );
+        if (notesRequest != null) {
+          await _openBookRequest(notesRequest);
+        }
+        break;
+      case _LibraryQuickAction.stats:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) {
+              return ReadingStatsPage(
+                entries: _entries,
+                readingStatsService: widget.readingStatsService,
+                progressService: widget.progressService,
+              );
+            },
+          ),
+        );
+        break;
+      case _LibraryQuickAction.about:
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) => const AboutPage(),
+          ),
+        );
+        break;
+    }
   }
 
   Future<void> _showProfileSheet() async {
@@ -1116,93 +1204,127 @@ class _LibraryPageState extends State<LibraryPage> {
         .take(3)
         .toList(growable: false);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Biblioteca'),
-        centerTitle: false,
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Perfil e backup',
-            onPressed: _showProfileSheet,
-            icon: const Icon(Icons.manage_accounts_rounded),
-          ),
-          IconButton(
-            tooltip: isDark ? 'Modo claro' : 'Modo escuro',
-            onPressed: () {
-              widget.onThemeModeChanged(
-                isDark ? ThemeMode.light : ThemeMode.dark,
-              );
-            },
-            icon: Icon(
-              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isBusy ? null : _showImportOptions,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Importar livro'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refreshLibrary,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-          children: <Widget>[
-            _buildHeroCard(theme),
-            const SizedBox(height: 18),
-            SearchBar(
-              controller: _searchController,
-              hintText: 'Buscar por titulo, autor, serie, tags...',
-              leading: const Icon(Icons.search_rounded),
-              trailing: _query.isEmpty
-                  ? null
-                  : <Widget>[
-                      IconButton(
-                        onPressed: _searchController.clear,
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-            ),
-            const SizedBox(height: 14),
-            _buildFilterChips(),
-            if (favoriteEntries.isNotEmpty &&
-                _filter == _LibraryFilter.all) ...<Widget>[
-              const SizedBox(height: 22),
-              Text('Favoritos', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 12),
-              for (final LibraryEntry entry in favoriteEntries)
-                _buildBookCard(entry),
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        Scaffold(
+          appBar: AppBar(
+            title: const Text('Biblioteca'),
+            centerTitle: false,
+            actions: <Widget>[
+              IconButton(
+                tooltip: 'Perfil e backup',
+                onPressed: _showProfileSheet,
+                icon: const Icon(Icons.manage_accounts_rounded),
+              ),
+              IconButton(
+                tooltip: isDark ? 'Modo claro' : 'Modo escuro',
+                onPressed: () {
+                  widget.onThemeModeChanged(
+                    isDark ? ThemeMode.light : ThemeMode.dark,
+                  );
+                },
+                icon: Icon(
+                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                ),
+              ),
+              PopupMenuButton<_LibraryQuickAction>(
+                tooltip: 'Ferramentas da biblioteca',
+                onSelected: (value) {
+                  unawaited(_openQuickAction(value));
+                },
+                itemBuilder: (BuildContext context) {
+                  return const <PopupMenuEntry<_LibraryQuickAction>>[
+                    PopupMenuItem<_LibraryQuickAction>(
+                      value: _LibraryQuickAction.globalSearch,
+                      child: Text('Busca global'),
+                    ),
+                    PopupMenuItem<_LibraryQuickAction>(
+                      value: _LibraryQuickAction.notes,
+                      child: Text('Notas e destaques'),
+                    ),
+                    PopupMenuItem<_LibraryQuickAction>(
+                      value: _LibraryQuickAction.stats,
+                      child: Text('Estatisticas'),
+                    ),
+                    PopupMenuItem<_LibraryQuickAction>(
+                      value: _LibraryQuickAction.about,
+                      child: Text('Sobre o Veredra'),
+                    ),
+                  ];
+                },
+              ),
+              const SizedBox(width: 8),
             ],
-            const SizedBox(height: 22),
-            Text('Biblioteca', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 12),
-            if (_isLoadingEntries)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (visibleEntries.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(24),
+          ),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: _isBusy ? null : _showImportOptions,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Importar livro'),
+          ),
+          body: RefreshIndicator(
+            onRefresh: _refreshLibrary,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+              children: <Widget>[
+                _buildHeroCard(theme),
+                const SizedBox(height: 18),
+                SearchBar(
+                  controller: _searchController,
+                  hintText: 'Buscar por titulo, autor, serie, tags...',
+                  leading: const Icon(Icons.search_rounded),
+                  trailing: _query.isEmpty
+                      ? null
+                      : <Widget>[
+                          IconButton(
+                            onPressed: _searchController.clear,
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
                 ),
-                child: Text(
-                  _entries.isEmpty
-                      ? 'Nenhum livro importado ainda. Use o botao de importar para comecar.'
-                      : 'Nenhum livro corresponde ao filtro atual.',
-                  style: theme.textTheme.bodyLarge,
-                ),
-              )
-            else
-              for (final LibraryEntry entry in visibleEntries)
-                _buildBookCard(entry),
-          ],
+                const SizedBox(height: 14),
+                _buildFilterChips(),
+                if (favoriteEntries.isNotEmpty &&
+                    _filter == _LibraryFilter.all) ...<Widget>[
+                  const SizedBox(height: 22),
+                  Text('Favoritos', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  for (final LibraryEntry entry in favoriteEntries)
+                    _buildBookCard(entry),
+                ],
+                const SizedBox(height: 22),
+                Text('Biblioteca', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 12),
+                if (_isLoadingEntries)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (visibleEntries.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Text(
+                      _entries.isEmpty
+                          ? 'Nenhum livro importado ainda. Use o botao de importar para comecar.'
+                          : 'Nenhum livro corresponde ao filtro atual.',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  )
+                else
+                  for (final LibraryEntry entry in visibleEntries)
+                    _buildBookCard(entry),
+              ],
+            ),
+          ),
         ),
-      ),
+        const Positioned.fill(
+          child: AppWatermarkOverlay(),
+        ),
+      ],
     );
   }
 
@@ -1234,6 +1356,15 @@ class _LibraryPageState extends State<LibraryPage> {
                 onPressed: _isBusy ? null : _showProfileSheet,
                 icon: const Icon(Icons.person_outline_rounded),
                 label: const Text('Perfis e backup'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: _isBusy
+                    ? null
+                    : () => unawaited(
+                          _openQuickAction(_LibraryQuickAction.globalSearch),
+                        ),
+                icon: const Icon(Icons.travel_explore_rounded),
+                label: const Text('Busca global'),
               ),
               if (_lastBookAvailable && _lastBookReference != null)
                 FilledButton.icon(

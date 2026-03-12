@@ -22,31 +22,39 @@ class AppWatermarkOverlay extends StatelessWidget {
         : const Color.fromRGBO(244, 239, 231, 0.16);
 
     return IgnorePointer(
-      child: SafeArea(
-        child: Align(
-          alignment: Alignment.bottomRight,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 18, bottom: 14),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: textColor.withValues(alpha: 0.14),
-                ),
-              ),
+      child: SelectionContainer.disabled(
+        child: ExcludeSemantics(
+          child: SafeArea(
+            child: Align(
+              alignment: Alignment.bottomLeft,
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                child: Text(
-                  '$brand | $signature',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.7,
+                padding: const EdgeInsets.only(left: 18, bottom: 14),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: textColor.withValues(alpha: 0.14),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    child: Text(
+                      '$brand | $signature',
+                      maxLines: 1,
+                      overflow: TextOverflow.fade,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.7,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
                   ),
                 ),
               ),

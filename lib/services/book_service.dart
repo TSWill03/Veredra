@@ -19,6 +19,8 @@ import '../models/book_reference.dart';
 import '../models/book_search_match.dart';
 import '../models/chapter.dart';
 import '../models/generated_chapter.dart';
+import '../models/library_entry.dart';
+import '../models/library_search_result.dart';
 import '../models/translation_language.dart';
 
 enum ImportKind { textFolder, textFiles, epub, pdf }
@@ -146,8 +148,79 @@ class BookService {
           matchCount: matchCount,
           snippet:
               _buildSnippet(content, firstMatchIndex, normalizedQuery.length),
+          chapterProgress: content.isEmpty
+              ? 0
+              : firstMatchIndex.clamp(0, content.length) / content.length,
         ),
       );
+
+      if (results.length >= maxResults) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
+  Future<List<LibrarySearchResult>> searchLibrary(
+    List<LibraryEntry> entries,
+    String query, {
+    int maxResults = 60,
+    int maxContentMatchesPerBook = 3,
+  }) async {
+    final String normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.length < 2) {
+      return const <LibrarySearchResult>[];
+    }
+
+    final List<LibrarySearchResult> results = <LibrarySearchResult>[];
+    for (final LibraryEntry entry in entries) {
+      if (entry.reference.searchMetadata.contains(normalizedQuery)) {
+        results.add(
+          LibrarySearchResult(
+            reference: entry.reference,
+            bookTitle: entry.title,
+            source: LibrarySearchResultSource.metadata,
+            snippet: _buildMetadataSnippet(entry.reference, query),
+            matchCount: 1,
+          ),
+        );
+      }
+
+      if (results.length >= maxResults || !entry.reference.usesTextReader) {
+        if (results.length >= maxResults) {
+          break;
+        }
+        continue;
+      }
+
+      try {
+        final Book book = await reopenBook(entry.reference);
+        final List<BookSearchMatch> matches = await searchBookContent(
+          book,
+          query,
+          maxResults: maxContentMatchesPerBook,
+        );
+        for (final BookSearchMatch match in matches) {
+          results.add(
+            LibrarySearchResult(
+              reference: entry.reference,
+              bookTitle: entry.title,
+              source: LibrarySearchResultSource.content,
+              snippet: match.snippet,
+              matchCount: match.matchCount,
+              chapterIndex: match.chapterIndex,
+              chapterTitle: match.chapterTitle,
+              chapterProgress: match.chapterProgress,
+            ),
+          );
+          if (results.length >= maxResults) {
+            break;
+          }
+        }
+      } catch (_) {
+        continue;
+      }
 
       if (results.length >= maxResults) {
         break;
@@ -793,6 +866,33 @@ class BookService {
     final String prefix = snippetStart > 0 ? '...' : '';
     final String suffix = snippetEnd < normalized.length ? '...' : '';
     return '$prefix$snippet$suffix';
+  }
+
+  String _buildMetadataSnippet(BookReference reference, String query) {
+    final List<String> fields = <String>[
+      reference.title,
+      if (reference.altTitle?.trim().isNotEmpty ?? false)
+        'Tambem conhecido como ${reference.altTitle!.trim()}',
+      if (reference.author?.trim().isNotEmpty ?? false)
+        'Autor: ${reference.author!.trim()}',
+      if (reference.series?.trim().isNotEmpty ?? false)
+        'Serie: ${reference.series!.trim()}',
+      if (reference.description?.trim().isNotEmpty ?? false)
+        reference.description!.trim(),
+      if (reference.tags.isNotEmpty) 'Tags: ${reference.tags.join(', ')}',
+    ];
+    final String normalizedQuery = query.trim().toLowerCase();
+    for (final String field in fields) {
+      final int matchIndex = field.toLowerCase().indexOf(normalizedQuery);
+      if (matchIndex >= 0) {
+        return _buildSnippet(field, matchIndex, normalizedQuery.length);
+      }
+    }
+
+    return fields.firstWhere(
+      (String value) => value.trim().isNotEmpty,
+      orElse: () => reference.subtitle,
+    );
   }
 
   String _deriveChapterTitle(String path) {

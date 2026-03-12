@@ -15,6 +15,7 @@ import 'bookmark_service.dart';
 import 'library_service.dart';
 import 'profile_service.dart';
 import 'progress_service.dart';
+import 'reading_stats_service.dart';
 
 class BackupService {
   BackupService({
@@ -23,6 +24,7 @@ class BackupService {
     required this.progressService,
     required this.bookmarkService,
     required this.annotationService,
+    required this.readingStatsService,
   });
 
   final ProfileService profileService;
@@ -30,6 +32,7 @@ class BackupService {
   final ProgressService progressService;
   final BookmarkService bookmarkService;
   final AnnotationService annotationService;
+  final ReadingStatsService readingStatsService;
 
   Future<String?> exportCurrentProfile(AppProfile profile) async {
     final FileSaveLocation? location = await getSaveLocation(
@@ -62,6 +65,8 @@ class BackupService {
         value.map((dynamic item) => item.toJson()).toList(growable: false),
       ),
     );
+    final Map<String, dynamic> readingStats =
+        await readingStatsService.exportJson();
 
     final Archive archive = Archive();
     final List<Map<String, dynamic>> snapshotBooks = <Map<String, dynamic>>[];
@@ -78,6 +83,7 @@ class BackupService {
       'progressState': progressState,
       'bookmarks': bookmarks,
       'annotations': annotations,
+      'readingStats': readingStats,
     };
 
     final List<int> snapshotBytes = utf8.encode(jsonEncode(snapshot));
@@ -134,6 +140,7 @@ class BackupService {
     progressService.configureProfile(importedProfile.id);
     bookmarkService.configureProfile(importedProfile.id);
     annotationService.configureProfile(importedProfile.id);
+    readingStatsService.configureProfile(importedProfile.id);
 
     final List<LibraryEntry> importedEntries = <LibraryEntry>[];
     for (final Map<String, dynamic> bookJson
@@ -174,6 +181,9 @@ class BackupService {
     );
     await annotationService.importJson(
       decoded['annotations'] as Map<String, dynamic>? ?? <String, dynamic>{},
+    );
+    await readingStatsService.importJson(
+      decoded['readingStats'] as Map<String, dynamic>? ?? <String, dynamic>{},
     );
 
     return importedProfile;

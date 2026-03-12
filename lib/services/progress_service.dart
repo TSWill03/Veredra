@@ -137,6 +137,19 @@ class ProgressService {
     });
   }
 
+  Future<Map<String, ReadingProgress>> loadAllProgresses() async {
+    return _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      final Map<String, ReadingProgress> result = <String, ReadingProgress>{};
+      for (final MapEntry<String, Map<String, dynamic>> entry
+          in state.progresses.entries) {
+        result[Uri.decodeComponent(entry.key)] =
+            ReadingProgress.fromJson(entry.value);
+      }
+      return result;
+    });
+  }
+
   Future<void> saveProgress(String bookId, ReadingProgress progress) async {
     await _runSerialized(() async {
       final _ProgressState state = await _loadStateUnsafe();
