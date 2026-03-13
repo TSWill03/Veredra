@@ -151,6 +151,70 @@ flutter run -d android
 flutter run -d ios
 ```
 
+## GitHub Actions para iOS
+
+O repositório agora inclui o workflow [`.github/workflows/flutter-ios.yml`](C:/Users/Usuario/Documents/Playground/.github/workflows/flutter-ios.yml).
+
+Ele roda em:
+
+- `workflow_dispatch`
+- `push` na branch `main`
+- `pull_request`
+
+### O que o workflow faz
+
+- instala Flutter `3.38.9` com cache
+- roda `flutter --version`
+- roda `flutter pub get`
+- roda `flutter analyze`
+- roda `flutter test`
+- instala CocoaPods no projeto iOS
+- gera build iOS
+- envia os artefatos do build para a aba de artifacts do GitHub Actions
+
+### Como disparar manualmente
+
+1. Abra o repositório no GitHub
+2. Entre em `Actions`
+3. Selecione `Flutter iOS`
+4. Clique em `Run workflow`
+
+### Secrets suportados
+
+Secrets principais para build assinado:
+
+- `BUILD_CERTIFICATE_BASE64`
+- `P12_PASSWORD`
+- `BUILD_PROVISION_PROFILE_BASE64`
+- `KEYCHAIN_PASSWORD`
+
+Secrets opcionais do App Store Connect:
+
+- `APPSTORE_ISSUER_ID`
+- `APPSTORE_KEY_ID`
+- `APPSTORE_PRIVATE_KEY`
+
+### Build sem assinatura x build assinado
+
+Sem assinatura:
+
+- acontece quando os secrets principais de assinatura nao existem
+- o workflow roda `flutter build ios --release --no-codesign`
+- o artefato enviado e o app iOS sem assinatura em `Runner.app`
+- serve para validar que o projeto compila no runner macOS
+
+Com assinatura:
+
+- acontece quando os secrets principais de assinatura existem
+- o workflow instala certificado e provisioning profile temporarios no runner
+- o workflow gera um `.ipa` assinado
+- os artefatos enviados incluem o `.ipa` e o `Runner.xcarchive`
+
+Observacao:
+
+- os secrets do App Store Connect sao preparados no workflow quando existem, deixando a base pronta para futuras etapas de distribuicao ou upload
+- o `ExportOptions.plist` do workflow esta configurado para `app-store`; se voce usar outro tipo de provisioning profile, ajuste esse metodo no YAML
+
 ## Traducao local no desktop
 
 Para usar a traducao local de livros textuais:

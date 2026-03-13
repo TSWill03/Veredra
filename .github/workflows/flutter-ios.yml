@@ -1,0 +1,174 @@
+# Signature: dev.tswicolly03
+name: Flutter iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-build:
+    name: iOS build
+    runs-on: macos-15
+    env:
+      FLUTTER_VERSION: 3.38.9
+      FLUTTER_CHANNEL: stable
+      IOS_BUNDLE_ID: dev.tswicolly03.txtWebnovelReader
+      HAS_IOS_SIGNING: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' && secrets.P12_PASSWORD != '' && secrets.BUILD_PROVISION_PROFILE_BASE64 != '' && secrets.KEYCHAIN_PASSWORD != '' }}
+      HAS_APPSTORE_API: ${{ secrets.APPSTORE_ISSUER_ID != '' && secrets.APPSTORE_KEY_ID != '' && secrets.APPSTORE_PRIVATE_KEY != '' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Usa a mesma linha do Flutter do projeto e reaproveita cache.
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install Dart and Flutter dependencies
+        run: flutter pub get
+
+      # Instala pods antes do build para deixar o workspace pronto.
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: pod install --repo-update
+
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      # A assinatura so entra quando os secrets principais existem.
+      - name: Prepare iOS signing assets
+        if: env.HAS_IOS_SIGNING == 'true'
+        shell: bash
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          PROFILE_PATH="$RUNNER_TEMP/build_profile.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/build_profile.plist"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          export CERTIFICATE_PATH PROFILE_PATH
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["CERTIFICATE_PATH"]).write_bytes(
+              base64.b64decode(os.environ["BUILD_CERTIFICATE_BASE64"])
+          )
+          Path(os.environ["PROFILE_PATH"]).write_bytes(
+              base64.b64decode(os.environ["BUILD_PROVISION_PROFILE_BASE64"])
+          )
+          PY
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          echo "IOS_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "IOS_PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "IOS_PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+          echo "IOS_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+
+      - name: Prepare App Store Connect API key
+        if: env.HAS_APPSTORE_API == 'true'
+        shell: bash
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          APPSTORE_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_KEY_ID}.p8"
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$APPSTORE_KEY_PATH"
+          echo "APPSTORE_ISSUER_ID=$APPSTORE_ISSUER_ID" >> "$GITHUB_ENV"
+          echo "APPSTORE_KEY_ID=$APPSTORE_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPSTORE_KEY_PATH=$APPSTORE_KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Create export options for signed IPA
+        if: env.HAS_IOS_SIGNING == 'true'
+        shell: bash
+        run: |
+          EXPORT_OPTIONS_PATH="$RUNNER_TEMP/ExportOptions.plist"
+          cat > "$EXPORT_OPTIONS_PATH" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>method</key>
+            <string>app-store</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${IOS_BUNDLE_ID}</key>
+              <string>${IOS_PROFILE_NAME}</string>
+            </dict>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>teamID</key>
+            <string>${IOS_TEAM_ID}</string>
+            <key>thinning</key>
+            <string>&lt;none&gt;</string>
+          </dict>
+          </plist>
+          EOF
+          echo "IOS_EXPORT_OPTIONS=$EXPORT_OPTIONS_PATH" >> "$GITHUB_ENV"
+
+      - name: Build unsigned iOS app
+        if: env.HAS_IOS_SIGNING != 'true'
+        run: flutter build ios --release --no-codesign
+
+      - name: Build signed iOS IPA
+        if: env.HAS_IOS_SIGNING == 'true'
+        run: flutter build ipa --release --export-options-plist="$IOS_EXPORT_OPTIONS"
+
+      - name: Upload unsigned iOS artifact
+        if: env.HAS_IOS_SIGNING != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: veredra-ios-unsigned
+          path: build/ios/iphoneos/Runner.app
+          if-no-files-found: error
+
+      - name: Upload signed iOS artifacts
+        if: env.HAS_IOS_SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: veredra-ios-signed
+          path: |
+            build/ios/archive/Runner.xcarchive
+            build/ios/ipa/*.ipa
+          if-no-files-found: error
