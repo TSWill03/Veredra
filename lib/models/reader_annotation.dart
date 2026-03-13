@@ -15,6 +15,7 @@ class ReaderAnnotation {
     required this.createdAt,
     required this.color,
     this.note,
+    this.isFavorite = false,
   });
 
   final String id;
@@ -27,6 +28,7 @@ class ReaderAnnotation {
   final DateTime createdAt;
   final ReaderHighlightColor color;
   final String? note;
+  final bool isFavorite;
 
   ReaderAnnotation copyWith({
     String? id,
@@ -39,6 +41,7 @@ class ReaderAnnotation {
     DateTime? createdAt,
     ReaderHighlightColor? color,
     String? note,
+    bool? isFavorite,
   }) {
     return ReaderAnnotation(
       id: id ?? this.id,
@@ -51,6 +54,7 @@ class ReaderAnnotation {
       createdAt: createdAt ?? this.createdAt,
       color: color ?? this.color,
       note: note ?? this.note,
+      isFavorite: isFavorite ?? this.isFavorite,
     );
   }
 
@@ -66,6 +70,7 @@ class ReaderAnnotation {
       'createdAt': createdAt.toIso8601String(),
       'color': color.name,
       'note': note,
+      'isFavorite': isFavorite,
     };
   }
 
@@ -84,6 +89,7 @@ class ReaderAnnotation {
           DateTime.now(),
       color: readerHighlightColorFromId(json['color'] as String?),
       note: json['note'] as String?,
+      isFavorite: json['isFavorite'] as bool? ?? false,
     );
   }
 }

@@ -22,6 +22,8 @@ import '../services/bookmark_service.dart';
 import '../services/book_service.dart';
 import '../services/progress_service.dart';
 import '../services/reading_stats_service.dart';
+import '../widgets/annotation_editor_dialog.dart';
+import '../widgets/bookmark_editor_dialog.dart';
 import '../widgets/reader_settings.dart';
 
 class ReaderPage extends StatefulWidget {
@@ -769,26 +771,43 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     required bool withNote,
   }) async {
     final Chapter chapter = widget.book.chapters[snapshot.chapterIndex];
-    final ReaderAnnotation? annotation = withNote
-        ? await _showAnnotationDialog(
-            chapterIndex: snapshot.chapterIndex,
-            chapter: chapter,
-            selectedText: snapshot.selectedText,
-            startOffset: snapshot.startOffset,
-            endOffset: snapshot.endOffset,
-            requireNote: true,
-          )
-        : ReaderAnnotation(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            bookId: widget.book.id,
-            chapterIndex: snapshot.chapterIndex,
-            chapterTitle: chapter.title,
-            startOffset: snapshot.startOffset,
-            endOffset: snapshot.endOffset,
-            selectedText: snapshot.selectedText,
-            createdAt: DateTime.now(),
-            color: ReaderHighlightColor.amber,
-          );
+    final DateTime now = DateTime.now();
+    ReaderAnnotation? annotation;
+    if (withNote) {
+      final AnnotationEditorResult? result = await showAnnotationEditorDialog(
+        context: context,
+        chapterTitle: chapter.title,
+        selectedText: snapshot.selectedText,
+        requireNote: true,
+      );
+      if (result != null) {
+        annotation = ReaderAnnotation(
+          id: now.microsecondsSinceEpoch.toString(),
+          bookId: widget.book.id,
+          chapterIndex: snapshot.chapterIndex,
+          chapterTitle: chapter.title,
+          startOffset: snapshot.startOffset,
+          endOffset: snapshot.endOffset,
+          selectedText: snapshot.selectedText,
+          createdAt: now,
+          color: result.color,
+          note: result.note,
+          isFavorite: result.isFavorite,
+        );
+      }
+    } else {
+      annotation = ReaderAnnotation(
+        id: now.microsecondsSinceEpoch.toString(),
+        bookId: widget.book.id,
+        chapterIndex: snapshot.chapterIndex,
+        chapterTitle: chapter.title,
+        startOffset: snapshot.startOffset,
+        endOffset: snapshot.endOffset,
+        selectedText: snapshot.selectedText,
+        createdAt: now,
+        color: ReaderHighlightColor.amber,
+      );
+    }
     if (annotation == null) {
       return;
     }
@@ -808,125 +827,6 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<ReaderAnnotation?> _showAnnotationDialog({
-    required int chapterIndex,
-    required Chapter chapter,
-    required String selectedText,
-    required int startOffset,
-    required int endOffset,
-    required bool requireNote,
-    ReaderAnnotation? existing,
-  }) async {
-    final TextEditingController noteController = TextEditingController(
-      text: existing?.note ?? '',
-    );
-    ReaderHighlightColor selectedColor =
-        existing?.color ?? ReaderHighlightColor.amber;
-
-    final ReaderAnnotation? result = await showDialog<ReaderAnnotation>(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              title:
-                  Text(existing == null ? 'Nova anotacao' : 'Editar anotacao'),
-              content: SizedBox(
-                width: 540,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        chapter.title,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: selectedColor.backgroundColor,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(selectedText),
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: <Widget>[
-                          for (final ReaderHighlightColor color
-                              in ReaderHighlightColor.values)
-                            ChoiceChip(
-                              label: Text(color.label),
-                              selected: selectedColor == color,
-                              onSelected: (bool selected) {
-                                if (!selected) {
-                                  return;
-                                }
-                                setState(() {
-                                  selectedColor = color;
-                                });
-                              },
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: noteController,
-                        maxLines: 5,
-                        decoration: const InputDecoration(
-                          labelText: 'Comentario',
-                          hintText: 'Escreva sua observacao sobre este trecho',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final String note = noteController.text.trim();
-                    if (requireNote && note.isEmpty) {
-                      return;
-                    }
-                    final DateTime now = DateTime.now();
-                    Navigator.of(context).pop(
-                      ReaderAnnotation(
-                        id: existing?.id ??
-                            now.microsecondsSinceEpoch.toString(),
-                        bookId: widget.book.id,
-                        chapterIndex: chapterIndex,
-                        chapterTitle: chapter.title,
-                        startOffset: startOffset,
-                        endOffset: endOffset,
-                        selectedText: selectedText,
-                        createdAt: existing?.createdAt ?? now,
-                        color: selectedColor,
-                        note: note,
-                      ),
-                    );
-                  },
-                  child: const Text('Salvar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    noteController.dispose();
-    return result;
-  }
-
   Future<void> _deleteAnnotation(ReaderAnnotation annotation) async {
     await widget.annotationService
         .removeAnnotation(widget.book.id, annotation.id);
@@ -940,19 +840,22 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   Future<void> _editAnnotation(ReaderAnnotation annotation) async {
-    final ReaderAnnotation? updated = await _showAnnotationDialog(
-      chapterIndex: annotation.chapterIndex,
-      chapter: widget.book.chapters[annotation.chapterIndex],
+    final AnnotationEditorResult? result = await showAnnotationEditorDialog(
+      context: context,
+      chapterTitle: widget.book.chapters[annotation.chapterIndex].title,
       selectedText: annotation.selectedText,
-      startOffset: annotation.startOffset,
-      endOffset: annotation.endOffset,
       requireNote: false,
       existing: annotation,
     );
-    if (updated == null) {
+    if (result == null) {
       return;
     }
 
+    final ReaderAnnotation updated = annotation.copyWith(
+      color: result.color,
+      note: result.note,
+      isFavorite: result.isFavorite,
+    );
     await widget.annotationService.saveAnnotation(updated);
     await _refreshAnnotations();
   }
@@ -983,107 +886,28 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
         progress?.chapterIndex ??
         _currentChapterIndex;
     final Chapter chapter = widget.book.chapters[chapterIndex];
-    final TextEditingController noteController = TextEditingController(
-      text: existing?.note ?? '',
-    );
-    final TextEditingController excerptController = TextEditingController(
-      text: existing?.excerpt ?? '',
-    );
-    bool isFavorite = existing?.isFavorite ?? false;
-
-    final ReaderBookmark? bookmark = await showDialog<ReaderBookmark>(
+    final BookmarkEditorResult? result = await showBookmarkEditorDialog(
       context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              title: Text(
-                existing == null ? 'Novo marcador' : 'Editar marcador',
-              ),
-              content: SizedBox(
-                width: 520,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        chapter.title,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: excerptController,
-                        maxLines: 4,
-                        decoration: const InputDecoration(
-                          labelText: 'Trecho importante',
-                          hintText: 'Cole ou escreva um trecho para lembrar',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: noteController,
-                        maxLines: 4,
-                        decoration: const InputDecoration(
-                          labelText: 'Anotacao',
-                          hintText: 'O que voce quer lembrar deste ponto?',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Marcar como favorito'),
-                        value: isFavorite,
-                        onChanged: (bool value) {
-                          setState(() {
-                            isFavorite = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final DateTime now = DateTime.now();
-                    Navigator.of(context).pop(
-                      ReaderBookmark(
-                        id: existing?.id ??
-                            now.microsecondsSinceEpoch.toString(),
-                        bookId: widget.book.id,
-                        chapterIndex: chapterIndex,
-                        chapterTitle: chapter.title,
-                        chapterProgress: existing?.chapterProgress ??
-                            progress?.chapterProgress ??
-                            0,
-                        createdAt: existing?.createdAt ?? now,
-                        note: noteController.text.trim(),
-                        excerpt: excerptController.text.trim(),
-                        isFavorite: isFavorite,
-                      ),
-                    );
-                  },
-                  child: const Text('Salvar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      chapterTitle: chapter.title,
+      existing: existing,
     );
-
-    noteController.dispose();
-    excerptController.dispose();
-    if (bookmark == null) {
+    if (result == null) {
       return;
     }
 
+    final DateTime now = DateTime.now();
+    final ReaderBookmark bookmark = ReaderBookmark(
+      id: existing?.id ?? now.microsecondsSinceEpoch.toString(),
+      bookId: widget.book.id,
+      chapterIndex: chapterIndex,
+      chapterTitle: chapter.title,
+      chapterProgress:
+          existing?.chapterProgress ?? progress?.chapterProgress ?? 0,
+      createdAt: existing?.createdAt ?? now,
+      note: result.note,
+      excerpt: result.excerpt,
+      isFavorite: result.isFavorite,
+    );
     await widget.bookmarkService.saveBookmark(bookmark);
     await _refreshBookmarks();
     if (!mounted) {
@@ -2052,7 +1876,9 @@ class _ReaderSidePanel extends StatelessWidget {
                                   backgroundColor:
                                       annotation.color.backgroundColor,
                                   child: Icon(
-                                    Icons.edit_note_rounded,
+                                    annotation.isFavorite
+                                        ? Icons.star_rounded
+                                        : Icons.edit_note_rounded,
                                     size: 18,
                                     color: annotation.color.accentColor,
                                   ),

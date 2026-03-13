@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +12,7 @@ import '../models/book_open_request.dart';
 import '../models/book_format.dart';
 import '../models/book_reference.dart';
 import '../models/library_entry.dart';
+import '../models/profile_backup_preview.dart';
 import '../models/reader_font_preset.dart';
 import '../models/translation_pair.dart';
 import '../models/translation_progress.dart';
@@ -803,17 +805,37 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _importBackup() async {
+    final XFile? file = await widget.backupService.pickBackupFile();
+    if (file == null) {
+      return;
+    }
+
+    ProfileBackupPreview preview;
+    try {
+      preview = await widget.backupService.readBackupPreview(file);
+    } catch (error) {
+      _showMessage(error.toString());
+      return;
+    }
+
+    final String? profileName = await _showBackupImportDialog(preview: preview);
+    if (profileName == null) {
+      return;
+    }
+
     await _runBusyTask(() async {
-      final AppProfile? importedProfile =
-          await widget.backupService.importProfileBackup();
-      if (importedProfile == null) {
-        return;
-      }
+      final AppProfile importedProfile =
+          await widget.backupService.importProfileBackupFromFile(
+        file,
+        profileNameOverride: profileName,
+      );
 
       await widget.onProfileChanged(importedProfile);
       await _refreshLibrary();
       await _refreshLastBookAvailability();
-    }, successMessage: 'Backup importado como novo perfil.');
+    },
+        successMessage:
+            'Backup importado: ${preview.booksCount} livro(s), ${preview.bookmarksCount} marcador(es) e ${preview.annotationsCount} destaque(s).');
   }
 
   Future<String?> _showTextInputDialog({
@@ -846,6 +868,84 @@ class _LibraryPageState extends State<LibraryPage> {
               onPressed: () =>
                   Navigator.of(context).pop(controller.text.trim()),
               child: const Text('Salvar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
+  }
+
+  Future<String?> _showBackupImportDialog({
+    required ProfileBackupPreview preview,
+  }) async {
+    final TextEditingController controller = TextEditingController(
+      text: preview.suggestedProfileName,
+    );
+
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        final ThemeData theme = Theme.of(context);
+        return AlertDialog(
+          title: const Text('Importar backup'),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Perfil de origem: ${preview.sourceProfileName}',
+                  style: theme.textTheme.titleSmall,
+                ),
+                if (preview.exportedAt != null) ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Exportado em ${_formatDateTime(preview.exportedAt!)}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    Chip(label: Text('${preview.booksCount} livro(s)')),
+                    Chip(label: Text('${preview.bookmarksCount} marcador(es)')),
+                    Chip(
+                        label: Text('${preview.annotationsCount} destaque(s)')),
+                    Chip(
+                        label: Text(
+                            '${preview.trackedBooksCount} livro(s) com estatisticas')),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do novo perfil',
+                    hintText: 'Ex.: Meu iPhone Importado',
+                  ),
+                  onSubmitted: (String value) {
+                    Navigator.of(context).pop(value.trim());
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('Importar'),
             ),
           ],
         );
@@ -1439,6 +1539,15 @@ class _LibraryPageState extends State<LibraryPage> {
         ],
       ),
     );
+  }
+
+  String _formatDateTime(DateTime value) {
+    final String day = value.day.toString().padLeft(2, '0');
+    final String month = value.month.toString().padLeft(2, '0');
+    final String year = value.year.toString();
+    final String hour = value.hour.toString().padLeft(2, '0');
+    final String minute = value.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute';
   }
 
   Widget _buildFilterChips() {

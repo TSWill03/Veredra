@@ -1,5 +1,6 @@
 // Signature: dev.tswicolly03
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/book_open_request.dart';
 import '../models/library_entry.dart';
@@ -8,6 +9,10 @@ import '../models/reader_bookmark.dart';
 import '../models/reader_highlight_color.dart';
 import '../services/annotation_service.dart';
 import '../services/bookmark_service.dart';
+import '../widgets/annotation_editor_dialog.dart';
+import '../widgets/bookmark_editor_dialog.dart';
+
+enum _NotesFilter { all, favorites, withNotes }
 
 class NotesOverviewPage extends StatefulWidget {
   const NotesOverviewPage({
@@ -30,6 +35,7 @@ class _NotesOverviewPageState extends State<NotesOverviewPage> {
 
   bool _isLoading = true;
   String _query = '';
+  _NotesFilter _filter = _NotesFilter.all;
   List<_BookmarkOverviewItem> _bookmarks = const <_BookmarkOverviewItem>[];
   List<_AnnotationOverviewItem> _annotations =
       const <_AnnotationOverviewItem>[];
@@ -132,24 +138,130 @@ class _NotesOverviewPageState extends State<NotesOverviewPage> {
     await _loadItems();
   }
 
-  List<_BookmarkOverviewItem> _filteredBookmarks() {
-    if (_query.isEmpty) {
-      return _bookmarks;
+  Future<void> _toggleBookmarkFavorite(_BookmarkOverviewItem item) async {
+    await widget.bookmarkService.saveBookmark(
+      item.bookmark.copyWith(isFavorite: !item.bookmark.isFavorite),
+    );
+    await _loadItems();
+  }
+
+  Future<void> _toggleAnnotationFavorite(_AnnotationOverviewItem item) async {
+    await widget.annotationService.saveAnnotation(
+      item.annotation.copyWith(isFavorite: !item.annotation.isFavorite),
+    );
+    await _loadItems();
+  }
+
+  Future<void> _editBookmark(_BookmarkOverviewItem item) async {
+    final BookmarkEditorResult? result = await showBookmarkEditorDialog(
+      context: context,
+      chapterTitle: item.bookmark.chapterTitle,
+      existing: item.bookmark,
+    );
+    if (result == null) {
+      return;
     }
-    return _bookmarks
-        .where((item) => item.searchableText.contains(_query))
-        .toList(
-          growable: false,
+
+    await widget.bookmarkService.saveBookmark(
+      item.bookmark.copyWith(
+        note: result.note,
+        excerpt: result.excerpt,
+        isFavorite: result.isFavorite,
+      ),
+    );
+    await _loadItems();
+  }
+
+  Future<void> _editAnnotation(_AnnotationOverviewItem item) async {
+    final AnnotationEditorResult? result = await showAnnotationEditorDialog(
+      context: context,
+      chapterTitle: item.annotation.chapterTitle,
+      selectedText: item.annotation.selectedText,
+      requireNote: false,
+      existing: item.annotation,
+    );
+    if (result == null) {
+      return;
+    }
+
+    await widget.annotationService.saveAnnotation(
+      item.annotation.copyWith(
+        note: result.note,
+        color: result.color,
+        isFavorite: result.isFavorite,
+      ),
+    );
+    await _loadItems();
+  }
+
+  Future<void> _copyText(String content, String message) async {
+    await Clipboard.setData(ClipboardData(text: content));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  List<_BookmarkOverviewItem> _filteredBookmarks() {
+    Iterable<_BookmarkOverviewItem> items = _bookmarks;
+    if (_query.isNotEmpty) {
+      items = items.where((item) => item.searchableText.contains(_query));
+    }
+
+    switch (_filter) {
+      case _NotesFilter.all:
+        break;
+      case _NotesFilter.favorites:
+        items = items.where((item) => item.bookmark.isFavorite);
+        break;
+      case _NotesFilter.withNotes:
+        items = items.where(
+          (item) =>
+              (item.bookmark.note?.trim().isNotEmpty ?? false) ||
+              (item.bookmark.excerpt?.trim().isNotEmpty ?? false),
         );
+        break;
+    }
+
+    final List<_BookmarkOverviewItem> result = items.toList(growable: false);
+    result.sort((a, b) {
+      if (a.bookmark.isFavorite != b.bookmark.isFavorite) {
+        return a.bookmark.isFavorite ? -1 : 1;
+      }
+      return b.bookmark.createdAt.compareTo(a.bookmark.createdAt);
+    });
+    return result;
   }
 
   List<_AnnotationOverviewItem> _filteredAnnotations() {
-    if (_query.isEmpty) {
-      return _annotations;
+    Iterable<_AnnotationOverviewItem> items = _annotations;
+    if (_query.isNotEmpty) {
+      items = items.where((item) => item.searchableText.contains(_query));
     }
-    return _annotations
-        .where((item) => item.searchableText.contains(_query))
-        .toList(growable: false);
+
+    switch (_filter) {
+      case _NotesFilter.all:
+        break;
+      case _NotesFilter.favorites:
+        items = items.where((item) => item.annotation.isFavorite);
+        break;
+      case _NotesFilter.withNotes:
+        items = items.where(
+          (item) => item.annotation.note?.trim().isNotEmpty ?? false,
+        );
+        break;
+    }
+
+    final List<_AnnotationOverviewItem> result = items.toList(growable: false);
+    result.sort((a, b) {
+      if (a.annotation.isFavorite != b.annotation.isFavorite) {
+        return a.annotation.isFavorite ? -1 : 1;
+      }
+      return b.annotation.createdAt.compareTo(a.annotation.createdAt);
+    });
+    return result;
   }
 
   @override
@@ -158,6 +270,17 @@ class _NotesOverviewPageState extends State<NotesOverviewPage> {
     final List<_BookmarkOverviewItem> visibleBookmarks = _filteredBookmarks();
     final List<_AnnotationOverviewItem> visibleAnnotations =
         _filteredAnnotations();
+    final int favoriteCount =
+        _bookmarks.where((item) => item.bookmark.isFavorite).length +
+            _annotations.where((item) => item.annotation.isFavorite).length;
+    final int commentaryCount = _bookmarks
+            .where((item) =>
+                (item.bookmark.note?.trim().isNotEmpty ?? false) ||
+                (item.bookmark.excerpt?.trim().isNotEmpty ?? false))
+            .length +
+        _annotations
+            .where((item) => item.annotation.note?.trim().isNotEmpty ?? false)
+            .length;
 
     return Scaffold(
       appBar: AppBar(
@@ -211,10 +334,52 @@ class _NotesOverviewPageState extends State<NotesOverviewPage> {
                         label: Text('${_annotations.length} destaque(s)'),
                         visualDensity: VisualDensity.compact,
                       ),
+                      Chip(
+                        label: Text('$favoriteCount favorito(s)'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      Chip(
+                        label: Text('$commentaryCount com comentario'),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     ],
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: <Widget>[
+                ChoiceChip(
+                  label: const Text('Tudo'),
+                  selected: _filter == _NotesFilter.all,
+                  onSelected: (_) {
+                    setState(() {
+                      _filter = _NotesFilter.all;
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Favoritos'),
+                  selected: _filter == _NotesFilter.favorites,
+                  onSelected: (_) {
+                    setState(() {
+                      _filter = _NotesFilter.favorites;
+                    });
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Com comentarios'),
+                  selected: _filter == _NotesFilter.withNotes,
+                  onSelected: (_) {
+                    setState(() {
+                      _filter = _NotesFilter.withNotes;
+                    });
+                  },
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             const TabBar(
@@ -255,6 +420,23 @@ class _NotesOverviewPageState extends State<NotesOverviewPage> {
                                         ),
                                       );
                                     },
+                                    onEdit: () => _editBookmark(item),
+                                    onCopy: () => _copyText(
+                                      item.bookmark.excerpt
+                                                  ?.trim()
+                                                  .isNotEmpty ??
+                                              false
+                                          ? item.bookmark.excerpt!.trim()
+                                          : item.bookmark.note
+                                                      ?.trim()
+                                                      .isNotEmpty ??
+                                                  false
+                                              ? item.bookmark.note!.trim()
+                                              : item.bookmark.chapterTitle,
+                                      'Marcador copiado.',
+                                    ),
+                                    onToggleFavorite: () =>
+                                        _toggleBookmarkFavorite(item),
                                     onDelete: () => _deleteBookmark(item),
                                   );
                                 },
@@ -282,6 +464,13 @@ class _NotesOverviewPageState extends State<NotesOverviewPage> {
                                         ),
                                       );
                                     },
+                                    onEdit: () => _editAnnotation(item),
+                                    onCopy: () => _copyText(
+                                      item.annotation.selectedText,
+                                      'Trecho copiado.',
+                                    ),
+                                    onToggleFavorite: () =>
+                                        _toggleAnnotationFavorite(item),
                                     onDelete: () => _deleteAnnotation(item),
                                   );
                                 },
@@ -340,11 +529,17 @@ class _BookmarkCard extends StatelessWidget {
   const _BookmarkCard({
     required this.item,
     required this.onTap,
+    required this.onEdit,
+    required this.onCopy,
+    required this.onToggleFavorite,
     required this.onDelete,
   });
 
   final _BookmarkOverviewItem item;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onCopy;
+  final VoidCallback onToggleFavorite;
   final VoidCallback onDelete;
 
   @override
@@ -380,10 +575,45 @@ class _BookmarkCard extends StatelessWidget {
           ),
         ),
         isThreeLine: true,
-        trailing: IconButton(
-          tooltip: 'Remover marcador',
-          onPressed: onDelete,
-          icon: const Icon(Icons.delete_outline_rounded),
+        trailing: PopupMenuButton<String>(
+          onSelected: (String value) {
+            switch (value) {
+              case 'edit':
+                onEdit();
+                break;
+              case 'copy':
+                onCopy();
+                break;
+              case 'favorite':
+                onToggleFavorite();
+                break;
+              case 'delete':
+                onDelete();
+                break;
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'edit',
+              child: Text('Editar'),
+            ),
+            const PopupMenuItem<String>(
+              value: 'copy',
+              child: Text('Copiar texto'),
+            ),
+            PopupMenuItem<String>(
+              value: 'favorite',
+              child: Text(
+                item.bookmark.isFavorite
+                    ? 'Remover dos favoritos'
+                    : 'Favoritar',
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              child: Text('Remover'),
+            ),
+          ],
         ),
         onTap: onTap,
       ),
@@ -395,11 +625,17 @@ class _AnnotationCard extends StatelessWidget {
   const _AnnotationCard({
     required this.item,
     required this.onTap,
+    required this.onEdit,
+    required this.onCopy,
+    required this.onToggleFavorite,
     required this.onDelete,
   });
 
   final _AnnotationOverviewItem item;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onCopy;
+  final VoidCallback onToggleFavorite;
   final VoidCallback onDelete;
 
   @override
@@ -421,7 +657,9 @@ class _AnnotationCard extends StatelessWidget {
         leading: CircleAvatar(
           backgroundColor: item.annotation.color.backgroundColor,
           child: Icon(
-            Icons.edit_note_rounded,
+            item.annotation.isFavorite
+                ? Icons.star_rounded
+                : Icons.edit_note_rounded,
             color: item.annotation.color.accentColor,
           ),
         ),
@@ -435,10 +673,45 @@ class _AnnotationCard extends StatelessWidget {
           ),
         ),
         isThreeLine: true,
-        trailing: IconButton(
-          tooltip: 'Remover destaque',
-          onPressed: onDelete,
-          icon: const Icon(Icons.delete_outline_rounded),
+        trailing: PopupMenuButton<String>(
+          onSelected: (String value) {
+            switch (value) {
+              case 'edit':
+                onEdit();
+                break;
+              case 'copy':
+                onCopy();
+                break;
+              case 'favorite':
+                onToggleFavorite();
+                break;
+              case 'delete':
+                onDelete();
+                break;
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'edit',
+              child: Text('Editar'),
+            ),
+            const PopupMenuItem<String>(
+              value: 'copy',
+              child: Text('Copiar trecho'),
+            ),
+            PopupMenuItem<String>(
+              value: 'favorite',
+              child: Text(
+                item.annotation.isFavorite
+                    ? 'Remover dos favoritos'
+                    : 'Favoritar',
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              child: Text('Remover'),
+            ),
+          ],
         ),
         onTap: onTap,
       ),

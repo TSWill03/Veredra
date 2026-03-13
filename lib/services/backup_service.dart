@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import '../models/app_profile.dart';
 import '../models/book_reference.dart';
 import '../models/library_entry.dart';
+import '../models/profile_backup_preview.dart';
 import 'annotation_service.dart';
 import 'bookmark_service.dart';
 import 'library_service.dart';
@@ -33,6 +34,18 @@ class BackupService {
   final BookmarkService bookmarkService;
   final AnnotationService annotationService;
   final ReadingStatsService readingStatsService;
+
+  Future<XFile?> pickBackupFile() async {
+    return openFile(
+      acceptedTypeGroups: <XTypeGroup>[
+        const XTypeGroup(
+          label: 'Backup',
+          extensions: <String>['twrbackup', 'zip'],
+        ),
+      ],
+      confirmButtonText: 'Importar backup',
+    );
+  }
 
   Future<String?> exportCurrentProfile(AppProfile profile) async {
     final FileSaveLocation? location = await getSaveLocation(
@@ -102,19 +115,56 @@ class BackupService {
   }
 
   Future<AppProfile?> importProfileBackup() async {
-    final XFile? file = await openFile(
-      acceptedTypeGroups: <XTypeGroup>[
-        const XTypeGroup(
-          label: 'Backup',
-          extensions: <String>['twrbackup', 'zip'],
-        ),
-      ],
-      confirmButtonText: 'Importar backup',
-    );
+    final XFile? file = await pickBackupFile();
     if (file == null) {
       return null;
     }
 
+    return importProfileBackupFromFile(file);
+  }
+
+  Future<ProfileBackupPreview> readBackupPreview(XFile file) async {
+    final Map<String, dynamic> snapshot = await _readSnapshot(file);
+    final AppProfile sourceProfile = AppProfile.fromJson(
+      snapshot['profile'] as Map<String, dynamic>? ?? <String, dynamic>{},
+    );
+    final Map<String, dynamic> bookmarks =
+        snapshot['bookmarks'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final Map<String, dynamic> annotations =
+        snapshot['annotations'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final Map<String, dynamic> readingStats =
+        snapshot['readingStats'] as Map<String, dynamic>? ??
+            <String, dynamic>{};
+
+    int bookmarksCount = 0;
+    for (final dynamic value in bookmarks.values) {
+      bookmarksCount += (value as List<dynamic>? ?? const <dynamic>[]).length;
+    }
+
+    int annotationsCount = 0;
+    for (final dynamic value in annotations.values) {
+      annotationsCount += (value as List<dynamic>? ?? const <dynamic>[]).length;
+    }
+
+    final int trackedBooksCount =
+        (readingStats['stats'] as Map<String, dynamic>? ?? <String, dynamic>{})
+            .length;
+
+    return ProfileBackupPreview(
+      sourceProfileName: sourceProfile.name,
+      exportedAt: DateTime.tryParse(snapshot['exportedAt'] as String? ?? ''),
+      booksCount:
+          (snapshot['books'] as List<dynamic>? ?? const <dynamic>[]).length,
+      bookmarksCount: bookmarksCount,
+      annotationsCount: annotationsCount,
+      trackedBooksCount: trackedBooksCount,
+    );
+  }
+
+  Future<AppProfile> importProfileBackupFromFile(
+    XFile file, {
+    String? profileNameOverride,
+  }) async {
     final List<int> bytes = await file.readAsBytes();
     final Archive archive = ZipDecoder().decodeBytes(bytes);
     final ArchiveFile? snapshotFile = archive.findFile('snapshot.json');
@@ -133,7 +183,10 @@ class BackupService {
       decoded['profile'] as Map<String, dynamic>? ?? <String, dynamic>{},
     );
     final AppProfile importedProfile = await profileService.createProfile(
-      '${sourceProfile.name} Importado',
+      _normalizeImportedProfileName(
+        profileNameOverride,
+        sourceProfile.name,
+      ),
     );
 
     libraryService.configureProfile(importedProfile.id);
@@ -187,6 +240,24 @@ class BackupService {
     );
 
     return importedProfile;
+  }
+
+  Future<Map<String, dynamic>> _readSnapshot(XFile file) async {
+    final List<int> bytes = await file.readAsBytes();
+    final Archive archive = ZipDecoder().decodeBytes(bytes);
+    final ArchiveFile? snapshotFile = archive.findFile('snapshot.json');
+    if (snapshotFile == null) {
+      throw StateError('O arquivo nao parece ser um backup valido.');
+    }
+
+    final dynamic decoded = jsonDecode(
+      utf8.decode(snapshotFile.content as List<int>),
+    );
+    if (decoded is! Map<String, dynamic>) {
+      throw StateError('O snapshot do backup esta invalido.');
+    }
+
+    return decoded;
   }
 
   Future<_ArchivedBookRecord> _archiveBook(
@@ -360,6 +431,17 @@ class BackupService {
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  String _normalizeImportedProfileName(
+    String? profileNameOverride,
+    String sourceProfileName,
+  ) {
+    final String normalized = profileNameOverride?.trim() ?? '';
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+    return '$sourceProfileName Importado';
   }
 }
 
