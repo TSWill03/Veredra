@@ -10,6 +10,7 @@ import 'services/backup_service.dart';
 import 'services/bookmark_service.dart';
 import 'services/book_service.dart';
 import 'services/library_service.dart';
+import 'services/library_search_service.dart';
 import 'services/profile_service.dart';
 import 'services/progress_service.dart';
 import 'services/reading_stats_service.dart';
@@ -31,6 +32,11 @@ class _VeredraAppState extends State<VeredraApp> {
   final ProfileService _profileService = ProfileService();
   final BookService _bookService = BookService();
   final LibraryService _libraryService = LibraryService();
+  late final LibrarySearchService _librarySearchService = LibrarySearchService(
+    bookService: _bookService,
+    bookmarkService: _bookmarkService,
+    annotationService: _annotationService,
+  );
   final ProgressService _progressService = ProgressService();
   final BookmarkService _bookmarkService = BookmarkService();
   final AnnotationService _annotationService = AnnotationService();
@@ -214,6 +220,7 @@ class _VeredraAppState extends State<VeredraApp> {
               annotationService: _annotationService,
               bookmarkService: _bookmarkService,
               libraryService: _libraryService,
+              librarySearchService: _librarySearchService,
               progressService: _progressService,
               readingStatsService: _readingStatsService,
               translationService: _translationService,

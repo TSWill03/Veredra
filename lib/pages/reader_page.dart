@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import '../models/book.dart';
 import '../models/book_search_match.dart';
@@ -1248,6 +1249,76 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     });
   }
 
+  void _toggleThemeShortcut() {
+    unawaited(
+      _applyThemeMode(
+        Theme.of(context).brightness == Brightness.dark
+            ? ThemeMode.light
+            : ThemeMode.dark,
+      ),
+    );
+  }
+
+  void _openReaderSidePanel() {
+    if (_isFocusMode) {
+      setState(() {
+        _isFocusMode = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _scaffoldKey.currentState?.openEndDrawer();
+      });
+      return;
+    }
+
+    _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  void _handleReaderEscape() {
+    if (_isFocusMode) {
+      _toggleFocusMode();
+    }
+  }
+
+  Map<ShortcutActivator, VoidCallback> _readerShortcuts() {
+    return <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+          unawaited(_openContentSearch()),
+      const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () =>
+          unawaited(_openContentSearch()),
+      const SingleActivator(
+        LogicalKeyboardKey.keyF,
+        control: true,
+        shift: true,
+      ): () => unawaited(_openChapterSearch()),
+      const SingleActivator(
+        LogicalKeyboardKey.keyF,
+        meta: true,
+        shift: true,
+      ): () => unawaited(_openChapterSearch()),
+      const SingleActivator(LogicalKeyboardKey.keyB, control: true): () =>
+          unawaited(_showAddBookmarkDialog()),
+      const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () =>
+          unawaited(_showAddBookmarkDialog()),
+      const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+          _openReaderSidePanel,
+      const SingleActivator(LogicalKeyboardKey.keyL, meta: true):
+          _openReaderSidePanel,
+      const SingleActivator(LogicalKeyboardKey.f11): _toggleFocusMode,
+      const SingleActivator(LogicalKeyboardKey.escape): _handleReaderEscape,
+      const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
+          unawaited(_openSettings()),
+      const SingleActivator(LogicalKeyboardKey.comma, meta: true): () =>
+          unawaited(_openSettings()),
+      const SingleActivator(LogicalKeyboardKey.keyD, control: true):
+          _toggleThemeShortcut,
+      const SingleActivator(LogicalKeyboardKey.keyD, meta: true):
+          _toggleThemeShortcut,
+    };
+  }
+
   void _resumeReadingSession() {
     _readingSessionStartedAt ??= DateTime.now();
   }
@@ -1491,163 +1562,161 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       },
     );
 
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: backgroundPreset.scaffoldColor,
-      appBar: _isFocusMode
-          ? null
-          : AppBar(
-              backgroundColor: backgroundPreset.scaffoldColor,
-              foregroundColor: backgroundPreset.primaryTextColor,
-              titleSpacing: 0,
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(widget.book.title),
-                  Text(
-                    'Capitulo ${_currentChapterIndex + 1} de ${widget.book.chapterCount}',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: backgroundPreset.secondaryTextColor,
-                    ),
+    return CallbackShortcuts(
+      bindings: _readerShortcuts(),
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: backgroundPreset.scaffoldColor,
+          appBar: _isFocusMode
+              ? null
+              : AppBar(
+                  backgroundColor: backgroundPreset.scaffoldColor,
+                  foregroundColor: backgroundPreset.primaryTextColor,
+                  titleSpacing: 0,
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(widget.book.title),
+                      Text(
+                        'Capitulo ${_currentChapterIndex + 1} de ${widget.book.chapterCount}',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: backgroundPreset.secondaryTextColor,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              actions: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: backgroundPreset.surfaceColor,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${(progressValue * 100).round()}%',
-                        style:
-                            TextStyle(color: backgroundPreset.primaryTextColor),
+                  actions: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: backgroundPreset.surfaceColor,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${(progressValue * 100).round()}%',
+                            style: TextStyle(
+                                color: backgroundPreset.primaryTextColor),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Buscar no conteudo',
-                  onPressed: _openContentSearch,
-                  icon: const Icon(Icons.search_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Buscar capitulos',
-                  onPressed: _openChapterSearch,
-                  icon: const Icon(Icons.subject_rounded),
-                ),
-                IconButton(
-                  tooltip: 'Novo marcador',
-                  onPressed: () => _showAddBookmarkDialog(),
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Capitulos e marcadores',
-                  onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                  icon: const Icon(Icons.list_rounded),
-                ),
-                IconButton(
-                  tooltip: Theme.of(context).brightness == Brightness.dark
-                      ? 'Modo claro'
-                      : 'Modo escuro',
-                  onPressed: () {
-                    unawaited(
-                      _applyThemeMode(
+                    IconButton(
+                      tooltip: 'Buscar no conteudo',
+                      onPressed: _openContentSearch,
+                      icon: const Icon(Icons.search_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Buscar capitulos',
+                      onPressed: _openChapterSearch,
+                      icon: const Icon(Icons.subject_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Novo marcador',
+                      onPressed: () => _showAddBookmarkDialog(),
+                      icon: const Icon(Icons.bookmark_add_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'Capitulos e marcadores',
+                      onPressed: _openReaderSidePanel,
+                      icon: const Icon(Icons.list_rounded),
+                    ),
+                    IconButton(
+                      tooltip: Theme.of(context).brightness == Brightness.dark
+                          ? 'Modo claro'
+                          : 'Modo escuro',
+                      onPressed: _toggleThemeShortcut,
+                      icon: Icon(
                         Theme.of(context).brightness == Brightness.dark
-                            ? ThemeMode.light
-                            : ThemeMode.dark,
+                            ? Icons.light_mode_rounded
+                            : Icons.dark_mode_rounded,
                       ),
-                    );
+                    ),
+                    IconButton(
+                      tooltip: _isFocusMode ? 'Sair do foco' : 'Modo foco',
+                      onPressed: _toggleFocusMode,
+                      icon: Icon(
+                        _isFocusMode
+                            ? Icons.center_focus_weak_rounded
+                            : Icons.center_focus_strong_rounded,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Configuracoes',
+                      onPressed: _openSettings,
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  bottom: PreferredSize(
+                    preferredSize: const Size.fromHeight(3),
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      value: _clampDouble(progressValue, 0, 1),
+                      backgroundColor: backgroundPreset.surfaceColor,
+                    ),
+                  ),
+                ),
+          endDrawer: _isFocusMode
+              ? null
+              : _ReaderSidePanel(
+                  book: widget.book,
+                  currentChapterIndex: _currentChapterIndex,
+                  progressValue: progressValue,
+                  bookmarks: _bookmarks,
+                  annotations: _annotations.reversed.toList(growable: false),
+                  onJumpToChapter: (int chapterIndex) {
+                    Navigator.of(context).pop();
+                    unawaited(_jumpToChapter(chapterIndex));
                   },
-                  icon: Icon(
-                    Theme.of(context).brightness == Brightness.dark
-                        ? Icons.light_mode_rounded
-                        : Icons.dark_mode_rounded,
+                  onJumpToBookmark: (ReaderBookmark bookmark) {
+                    Navigator.of(context).pop();
+                    unawaited(_jumpToBookmark(bookmark));
+                  },
+                  onEditBookmark: (ReaderBookmark bookmark) {
+                    Navigator.of(context).pop();
+                    unawaited(_showAddBookmarkDialog(bookmark));
+                  },
+                  onDeleteBookmark: (ReaderBookmark bookmark) {
+                    Navigator.of(context).pop();
+                    unawaited(_deleteBookmark(bookmark));
+                  },
+                  onJumpToAnnotation: (ReaderAnnotation annotation) {
+                    Navigator.of(context).pop();
+                    unawaited(_jumpToAnnotation(annotation));
+                  },
+                  onEditAnnotation: (ReaderAnnotation annotation) {
+                    Navigator.of(context).pop();
+                    unawaited(_editAnnotation(annotation));
+                  },
+                  onDeleteAnnotation: (ReaderAnnotation annotation) {
+                    Navigator.of(context).pop();
+                    unawaited(_deleteAnnotation(annotation));
+                  },
+                ),
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(child: readerBody),
+              if (_isFocusMode)
+                Positioned(
+                  right: 18,
+                  bottom: 18,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _toggleFocusMode,
+                    icon: const Icon(Icons.visibility_rounded),
+                    label: const Text('Sair do foco'),
                   ),
                 ),
-                IconButton(
-                  tooltip: _isFocusMode ? 'Sair do foco' : 'Modo foco',
-                  onPressed: _toggleFocusMode,
-                  icon: Icon(
-                    _isFocusMode
-                        ? Icons.center_focus_weak_rounded
-                        : Icons.center_focus_strong_rounded,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Configuracoes',
-                  onPressed: _openSettings,
-                  icon: const Icon(Icons.tune_rounded),
-                ),
-                const SizedBox(width: 4),
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(3),
-                child: LinearProgressIndicator(
-                  minHeight: 3,
-                  value: _clampDouble(progressValue, 0, 1),
-                  backgroundColor: backgroundPreset.surfaceColor,
-                ),
-              ),
-            ),
-      endDrawer: _isFocusMode
-          ? null
-          : _ReaderSidePanel(
-              book: widget.book,
-              currentChapterIndex: _currentChapterIndex,
-              progressValue: progressValue,
-              bookmarks: _bookmarks,
-              annotations: _annotations.reversed.toList(growable: false),
-              onJumpToChapter: (int chapterIndex) {
-                Navigator.of(context).pop();
-                unawaited(_jumpToChapter(chapterIndex));
-              },
-              onJumpToBookmark: (ReaderBookmark bookmark) {
-                Navigator.of(context).pop();
-                unawaited(_jumpToBookmark(bookmark));
-              },
-              onEditBookmark: (ReaderBookmark bookmark) {
-                Navigator.of(context).pop();
-                unawaited(_showAddBookmarkDialog(bookmark));
-              },
-              onDeleteBookmark: (ReaderBookmark bookmark) {
-                Navigator.of(context).pop();
-                unawaited(_deleteBookmark(bookmark));
-              },
-              onJumpToAnnotation: (ReaderAnnotation annotation) {
-                Navigator.of(context).pop();
-                unawaited(_jumpToAnnotation(annotation));
-              },
-              onEditAnnotation: (ReaderAnnotation annotation) {
-                Navigator.of(context).pop();
-                unawaited(_editAnnotation(annotation));
-              },
-              onDeleteAnnotation: (ReaderAnnotation annotation) {
-                Navigator.of(context).pop();
-                unawaited(_deleteAnnotation(annotation));
-              },
-            ),
-      body: Stack(
-        children: <Widget>[
-          Positioned.fill(child: readerBody),
-          if (_isFocusMode)
-            Positioned(
-              right: 18,
-              bottom: 18,
-              child: FilledButton.tonalIcon(
-                onPressed: _toggleFocusMode,
-                icon: const Icon(Icons.visibility_rounded),
-                label: const Text('Sair do foco'),
-              ),
-            ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

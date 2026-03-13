@@ -2,7 +2,7 @@
 import 'book_open_request.dart';
 import 'book_reference.dart';
 
-enum LibrarySearchResultSource { metadata, content }
+enum LibrarySearchResultSource { metadata, content, bookmark, annotation }
 
 class LibrarySearchResult {
   const LibrarySearchResult({
@@ -31,6 +31,10 @@ class LibrarySearchResult {
         return 'Metadados';
       case LibrarySearchResultSource.content:
         return chapterTitle ?? 'Conteudo';
+      case LibrarySearchResultSource.bookmark:
+        return 'Marcador';
+      case LibrarySearchResultSource.annotation:
+        return 'Destaque';
     }
   }
 

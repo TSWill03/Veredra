@@ -59,6 +59,7 @@ class ReadingStatsService {
     }
 
     final Map<String, BookReadingStats> stats = await loadAllStats();
+    final DateTime now = DateTime.now();
     final BookReadingStats current = stats[bookId] ??
         BookReadingStats(
           bookId: bookId,
@@ -68,11 +69,16 @@ class ReadingStatsService {
           lastReadAt: null,
           lastChapterIndex: chapterIndex,
         );
+    final Map<String, int> dailySeconds =
+        Map<String, int>.from(current.dailySeconds);
+    final String dateKey = BookReadingStats.dateKey(now);
+    dailySeconds[dateKey] = (dailySeconds[dateKey] ?? 0) + duration.inSeconds;
     stats[bookId] = current.copyWith(
       totalSeconds: current.totalSeconds + duration.inSeconds,
       sessionCount: current.sessionCount + 1,
-      lastReadAt: DateTime.now(),
+      lastReadAt: now,
       lastChapterIndex: chapterIndex,
+      dailySeconds: dailySeconds,
     );
     await _saveJson(stats);
   }
