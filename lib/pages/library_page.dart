@@ -1,6 +1,5 @@
 // Signature: dev.tswicolly03
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,10 +25,11 @@ import '../services/reading_stats_service.dart';
 import '../services/translation_service.dart';
 import '../widgets/app_watermark_overlay.dart';
 import '../widgets/book_translation_dialog.dart';
+import '../widgets/platform_cover_image.dart';
+import '../widgets/translation_progress_dialog.dart';
 import 'about_page.dart';
 import 'global_search_page.dart';
 import 'notes_overview_page.dart';
-import '../widgets/translation_progress_dialog.dart';
 import 'reading_stats_page.dart';
 import 'pdf_reader_page.dart';
 import 'reader_page.dart';
@@ -161,17 +161,8 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    bool exists = false;
-    if (reference.usesDirectory) {
-      exists = await Directory(reference.directoryPath!).exists();
-    } else {
-      for (final String path in reference.assetPaths) {
-        if (await File(path).exists()) {
-          exists = true;
-          break;
-        }
-      }
-    }
+    final bool exists =
+        await widget.bookService.isBookReferenceAvailable(reference);
 
     if (!mounted) {
       return;
@@ -1709,9 +1700,7 @@ class _BookCoverThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String? coverPath = reference.coverPath;
-    final bool hasCover = coverPath != null &&
-        coverPath.isNotEmpty &&
-        File(coverPath).existsSync();
+    final bool hasCover = coverPath != null && coverPath.isNotEmpty;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -1727,8 +1716,8 @@ class _BookCoverThumbnail extends StatelessWidget {
                     reference.coverAlignmentX,
                     reference.coverAlignmentY,
                   ),
-                  child: Image.file(
-                    File(coverPath),
+                  child: PlatformCoverImage(
+                    coverPath: coverPath,
                     width: width,
                     height: height,
                     fit: BoxFit.cover,
@@ -1736,7 +1725,7 @@ class _BookCoverThumbnail extends StatelessWidget {
                       reference.coverAlignmentX,
                       reference.coverAlignmentY,
                     ),
-                    errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                    placeholderBuilder: (_) => _buildPlaceholder(theme),
                   ),
                 ),
               )

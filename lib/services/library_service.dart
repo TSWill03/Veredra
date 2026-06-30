@@ -1,15 +1,13 @@
 // Signature: dev.tswicolly03
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../models/book_reference.dart';
 import '../models/library_entry.dart';
+import 'storage/app_storage.dart';
 
 class LibraryService {
+  final AppStorage _storage = createAppStorage();
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -17,12 +15,10 @@ class LibraryService {
   }
 
   Future<List<LibraryEntry>> loadEntries() async {
-    final File file = await _libraryFile();
-    if (!await file.exists()) {
+    final String? raw = await _storage.readString(_libraryKey);
+    if (raw == null) {
       return <LibraryEntry>[];
     }
-
-    final String raw = await file.readAsString();
     if (raw.trim().isEmpty) {
       return <LibraryEntry>[];
     }
@@ -261,27 +257,13 @@ class LibraryService {
   }
 
   Future<void> _saveEntries(List<LibraryEntry> entries) async {
-    final File file = await _libraryFile();
-    await file.parent.create(recursive: true);
     final String payload = jsonEncode(
       <String, dynamic>{
         'entries': entries.map((LibraryEntry entry) => entry.toJson()).toList(),
       },
     );
-    await file.writeAsString(payload, flush: true);
+    await _storage.writeString(_libraryKey, payload);
   }
 
-  Future<File> _libraryFile() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
-    return File(
-      p.join(
-        documentsDirectory.path,
-        'profiles',
-        _activeProfileId,
-        'library',
-        'library.json',
-      ),
-    );
-  }
+  String get _libraryKey => 'profiles/$_activeProfileId/library/library.json';
 }

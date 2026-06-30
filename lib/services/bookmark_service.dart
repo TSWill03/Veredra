@@ -1,13 +1,11 @@
 // Signature: dev.tswicolly03
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../models/reader_bookmark.dart';
+import 'storage/app_storage.dart';
 
 class BookmarkService {
+  final AppStorage _storage = createAppStorage();
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -88,12 +86,10 @@ class BookmarkService {
   }
 
   Future<Map<String, dynamic>> _loadJson() async {
-    final File file = await _bookmarksFile();
-    if (!await file.exists()) {
+    final String? raw = await _storage.readString(_bookmarksKey);
+    if (raw == null) {
       return <String, dynamic>{};
     }
-
-    final String raw = await file.readAsString();
     if (raw.trim().isEmpty) {
       return <String, dynamic>{};
     }
@@ -106,22 +102,9 @@ class BookmarkService {
   }
 
   Future<void> _saveJson(Map<String, dynamic> json) async {
-    final File file = await _bookmarksFile();
-    await file.parent.create(recursive: true);
-    await file.writeAsString(jsonEncode(json), flush: true);
+    await _storage.writeString(_bookmarksKey, jsonEncode(json));
   }
 
-  Future<File> _bookmarksFile() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
-    return File(
-      p.join(
-        documentsDirectory.path,
-        'profiles',
-        _activeProfileId,
-        'reader',
-        'bookmarks.json',
-      ),
-    );
-  }
+  String get _bookmarksKey =>
+      'profiles/$_activeProfileId/reader/bookmarks.json';
 }

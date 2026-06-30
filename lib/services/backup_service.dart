@@ -1,10 +1,10 @@
 // Signature: dev.tswicolly03
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/app_profile.dart';
@@ -18,6 +18,11 @@ import 'progress_service.dart';
 import 'reading_stats_service.dart';
 
 class BackupService {
+  static const int _maxBackupBytes = 256 * 1024 * 1024;
+  static const int _maxArchiveFiles = 20000;
+  static const int _maxArchiveFileBytes = 100 * 1024 * 1024;
+  static const int _maxTotalUncompressedBytes = 512 * 1024 * 1024;
+
   BackupService({
     required this.profileService,
     required this.libraryService,
@@ -35,6 +40,12 @@ class BackupService {
   final ReadingStatsService readingStatsService;
 
   Future<String?> exportCurrentProfile(AppProfile profile) async {
+    if (kIsWeb) {
+      throw StateError(
+        'Backup e restauracao ainda estao disponiveis apenas no desktop.',
+      );
+    }
+
     final FileSaveLocation? location = await getSaveLocation(
       suggestedName: '${_sanitizeFileName(profile.name)}.twrbackup',
       acceptedTypeGroups: <XTypeGroup>[
@@ -102,6 +113,12 @@ class BackupService {
   }
 
   Future<AppProfile?> importProfileBackup() async {
+    if (kIsWeb) {
+      throw StateError(
+        'Backup e restauracao ainda estao disponiveis apenas no desktop.',
+      );
+    }
+
     final XFile? file = await openFile(
       acceptedTypeGroups: <XTypeGroup>[
         const XTypeGroup(
@@ -116,7 +133,12 @@ class BackupService {
     }
 
     final List<int> bytes = await file.readAsBytes();
+    if (bytes.length > _maxBackupBytes) {
+      throw StateError('O backup selecionado excede o tamanho maximo seguro.');
+    }
+
     final Archive archive = ZipDecoder().decodeBytes(bytes);
+    _validateArchive(archive);
     final ArchiveFile? snapshotFile = archive.findFile('snapshot.json');
     if (snapshotFile == null) {
       throw StateError('O arquivo nao parece ser um backup valido.');
@@ -273,8 +295,9 @@ class BackupService {
           continue;
         }
 
-        final String relativeName =
-            file.name.replaceFirst('books/${entry.id}/directory/', '');
+        final String relativeName = _safeArchiveFileName(
+          file.name.replaceFirst('books/${entry.id}/directory/', ''),
+        );
         final File targetFile =
             File(p.join(restoredDirectory.path, relativeName));
         await targetFile.parent.create(recursive: true);
@@ -293,7 +316,7 @@ class BackupService {
           continue;
         }
 
-        final String filename = p.basename(archivePath);
+        final String filename = _safeArchiveFileName(archivePath);
         final File targetFile =
             File(p.join(restoredAssetsDirectory.path, filename));
         await targetFile.parent.create(recursive: true);
@@ -311,7 +334,10 @@ class BackupService {
         );
         await restoredCoverDirectory.create(recursive: true);
         final File targetFile = File(
-          p.join(restoredCoverDirectory.path, p.basename(archivedCoverPath)),
+          p.join(
+            restoredCoverDirectory.path,
+            _safeArchiveFileName(archivedCoverPath),
+          ),
         );
         await targetFile.writeAsBytes((coverFile.content as List).cast<int>());
         reference = reference.copyWith(coverPath: targetFile.path);
@@ -349,6 +375,10 @@ class BackupService {
     String sourcePath,
   ) async {
     final File file = File(sourcePath);
+    final int fileLength = await file.length();
+    if (fileLength > _maxArchiveFileBytes) {
+      throw StateError('Um arquivo do backup excede o tamanho maximo seguro.');
+    }
     final List<int> bytes = await file.readAsBytes();
     archive.addFile(
       ArchiveFile(archivePath, bytes.length, Uint8List.fromList(bytes)),
@@ -360,6 +390,56 @@ class BackupService {
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  void _validateArchive(Archive archive) {
+    int fileCount = 0;
+    int totalUncompressedBytes = 0;
+
+    for (final ArchiveFile file in archive.files) {
+      if (!file.isFile) {
+        continue;
+      }
+
+      fileCount++;
+      if (fileCount > _maxArchiveFiles) {
+        throw StateError('O backup possui arquivos demais para restaurar.');
+      }
+
+      if (!_isSafeArchivePath(file.name)) {
+        throw StateError('O backup contem caminhos internos invalidos.');
+      }
+
+      final int size = file.size;
+      if (size > _maxArchiveFileBytes) {
+        throw StateError('O backup contem um arquivo grande demais.');
+      }
+
+      totalUncompressedBytes += size;
+      if (totalUncompressedBytes > _maxTotalUncompressedBytes) {
+        throw StateError('O backup descompactado excede o limite seguro.');
+      }
+    }
+  }
+
+  bool _isSafeArchivePath(String archivePath) {
+    final String normalized = archivePath.replaceAll('\\', '/');
+    if (normalized.startsWith('/') || normalized.contains(':')) {
+      return false;
+    }
+
+    return !normalized
+        .split('/')
+        .any((String segment) => segment.isEmpty || segment == '..');
+  }
+
+  String _safeArchiveFileName(String archivePath) {
+    final String fileName = p.basename(archivePath.replaceAll('\\', '/'));
+    final String sanitized = _sanitizeFileName(fileName);
+    if (sanitized.isEmpty) {
+      throw StateError('O backup contem um nome de arquivo invalido.');
+    }
+    return sanitized;
   }
 }
 

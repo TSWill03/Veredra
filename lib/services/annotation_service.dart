@@ -1,13 +1,11 @@
 // Signature: dev.tswicolly03
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../models/reader_annotation.dart';
+import 'storage/app_storage.dart';
 
 class AnnotationService {
+  final AppStorage _storage = createAppStorage();
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -77,12 +75,10 @@ class AnnotationService {
   }
 
   Future<Map<String, dynamic>> _loadJson() async {
-    final File file = await _annotationsFile();
-    if (!await file.exists()) {
+    final String? raw = await _storage.readString(_annotationsKey);
+    if (raw == null) {
       return <String, dynamic>{};
     }
-
-    final String raw = await file.readAsString();
     if (raw.trim().isEmpty) {
       return <String, dynamic>{};
     }
@@ -95,22 +91,9 @@ class AnnotationService {
   }
 
   Future<void> _saveJson(Map<String, dynamic> json) async {
-    final File file = await _annotationsFile();
-    await file.parent.create(recursive: true);
-    await file.writeAsString(jsonEncode(json), flush: true);
+    await _storage.writeString(_annotationsKey, jsonEncode(json));
   }
 
-  Future<File> _annotationsFile() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
-    return File(
-      p.join(
-        documentsDirectory.path,
-        'profiles',
-        _activeProfileId,
-        'reader',
-        'annotations.json',
-      ),
-    );
-  }
+  String get _annotationsKey =>
+      'profiles/$_activeProfileId/reader/annotations.json';
 }

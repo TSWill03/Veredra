@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -15,6 +16,9 @@ import '../models/translation_progress.dart';
 import 'book_service.dart';
 
 class TranslationService {
+  static const Duration _commandTimeout = Duration(seconds: 60);
+  static const Duration _translationTimeout = Duration(hours: 2);
+
   String _activeProfileId = 'principal';
   _PythonCommand? _cachedPythonCommand;
 
@@ -23,7 +27,7 @@ class TranslationService {
   }
 
   bool get supportsLocalTranslation =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
   Future<TranslationEngineStatus> inspectLocalEngine() async {
     if (!supportsLocalTranslation) {
@@ -65,6 +69,7 @@ class TranslationService {
   }
 
   Future<void> installArgosPackage() async {
+    _ensureLocalTranslationSupported();
     final _PythonCommand command = await _requirePythonCommand();
     final _ProcessResultData result = await _runCommand(
       command,
@@ -83,6 +88,7 @@ class TranslationService {
   }
 
   Future<void> installModel(TranslationPair pair) async {
+    _ensureLocalTranslationSupported();
     final _PythonCommand command = await _requirePythonCommand();
     final Map<String, dynamic> payload = await _runJsonCommand(
       command,
@@ -103,6 +109,7 @@ class TranslationService {
     required BookService bookService,
     void Function(TranslationProgress value)? onProgress,
   }) async {
+    _ensureLocalTranslationSupported();
     if (!sourceBook.usesTextReader) {
       throw StateError(
         'A traducao local por enquanto funciona apenas em livros textuais.',
@@ -221,6 +228,7 @@ class TranslationService {
   }
 
   Future<_PythonCommand> _requirePythonCommand() async {
+    _ensureLocalTranslationSupported();
     final _PythonCommand? command = await _resolvePythonCommand();
     if (command == null) {
       throw StateError(
@@ -228,6 +236,14 @@ class TranslationService {
       );
     }
     return command;
+  }
+
+  void _ensureLocalTranslationSupported() {
+    if (!supportsLocalTranslation) {
+      throw StateError(
+        'A traducao local com Argos esta disponivel apenas no desktop.',
+      );
+    }
   }
 
   Future<_PythonCommand?> _resolvePythonCommand() async {
@@ -306,7 +322,16 @@ class TranslationService {
     });
 
     final String stderr = await process.stderr.transform(utf8.decoder).join();
-    final int exitCode = await process.exitCode;
+    final int exitCode = await process.exitCode.timeout(
+      _translationTimeout,
+      onTimeout: () {
+        process.kill();
+        throw TimeoutException(
+          'A traducao local excedeu o tempo maximo permitido.',
+          _translationTimeout,
+        );
+      },
+    );
     await stdoutSubscription.cancel();
 
     if (exitCode != 0) {
@@ -340,7 +365,7 @@ class TranslationService {
       command.executable,
       <String>[...command.args, ...args],
       runInShell: Platform.isWindows,
-    );
+    ).timeout(_commandTimeout);
     return _ProcessResultData(
       exitCode: result.exitCode,
       stdout: '${result.stdout ?? ''}'.trim(),

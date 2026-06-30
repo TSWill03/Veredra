@@ -1,11 +1,12 @@
 // Signature: dev.tswicolly03
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:epubx/epubx.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:image/image.dart' as img;
 import 'package:markdown/markdown.dart' as markdown;
@@ -22,6 +23,7 @@ import '../models/generated_chapter.dart';
 import '../models/library_entry.dart';
 import '../models/library_search_result.dart';
 import '../models/translation_language.dart';
+import 'storage/app_storage.dart';
 
 enum ImportKind { textFolder, textFiles, epub, pdf }
 
@@ -39,9 +41,11 @@ class ImportOption {
 
 class BookService {
   static const int _maxCachedChapterContents = 24;
+  static const String _webStoredPrefix = 'veredra://';
 
   final LinkedHashMap<String, String> _chapterContentCache =
       LinkedHashMap<String, String>();
+  final AppStorage _storage = createAppStorage();
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -49,7 +53,7 @@ class BookService {
     _chapterContentCache.clear();
   }
 
-  bool get supportsDirectoryImport => !Platform.isIOS;
+  bool get supportsDirectoryImport => !kIsWeb && !Platform.isIOS;
 
   List<ImportOption> getImportOptions() {
     final List<ImportOption> options = <ImportOption>[
@@ -78,6 +82,32 @@ class BookService {
     ];
 
     return List<ImportOption>.unmodifiable(options);
+  }
+
+  Future<bool> isBookReferenceAvailable(BookReference reference) async {
+    if (kIsWeb) {
+      if (reference.assetPaths.isEmpty) {
+        return false;
+      }
+      for (final String path in reference.assetPaths) {
+        if (_isWebStoredPath(path) &&
+            await _storage.exists(_storageKey(path))) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (reference.usesDirectory) {
+      return Directory(reference.directoryPath!).exists();
+    }
+
+    for (final String path in reference.assetPaths) {
+      if (await File(path).exists()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<Book?> importBook(ImportKind kind) async {
@@ -231,6 +261,13 @@ class BookService {
   }
 
   Future<Book> reopenBook(BookReference reference) {
+    if (kIsWeb) {
+      if (reference.isPdf) {
+        throw StateError('PDF ainda nao esta disponivel na versao Web.');
+      }
+      return _loadWebStoredTextBook(reference);
+    }
+
     if (reference.usesDirectory) {
       return loadBookFromDirectory(
         reference.directoryPath!,
@@ -261,7 +298,8 @@ class BookService {
 
   Future<Book?> _pickDirectoryAndLoad() async {
     if (!supportsDirectoryImport) {
-      return null;
+      throw StateError(
+          'Importacao por pasta esta disponivel apenas no desktop.');
     }
 
     final String? folderPath = await getDirectoryPath(
@@ -283,6 +321,10 @@ class BookService {
       return null;
     }
 
+    if (kIsWeb) {
+      return _loadWebTextBookFromXFiles(files);
+    }
+
     return loadTextBookFromFiles(
       files.map((XFile file) => file.path).toList(growable: false),
       sourceLabel: 'Arquivos importados',
@@ -299,6 +341,13 @@ class BookService {
       return null;
     }
 
+    if (kIsWeb) {
+      return loadEpubBookFromBytes(
+        await file.readAsBytes(),
+        sourceName: file.name,
+      );
+    }
+
     return loadEpubBook(file.path);
   }
 
@@ -309,6 +358,10 @@ class BookService {
     );
     if (file == null) {
       return null;
+    }
+
+    if (kIsWeb) {
+      throw StateError('PDF ainda nao esta disponivel na versao Web.');
     }
 
     return loadPdfBook(file.path, copyToManagedStorage: true);
@@ -337,6 +390,11 @@ class BookService {
     String folderPath, {
     String? preferredCoverPath,
   }) async {
+    if (kIsWeb) {
+      throw StateError(
+          'Importacao por pasta esta disponivel apenas no desktop.');
+    }
+
     final Directory directory = Directory(folderPath);
     if (!await directory.exists()) {
       throw FileSystemException('A pasta selecionada nao existe.', folderPath);
@@ -422,6 +480,81 @@ class BookService {
     );
   }
 
+  Future<Book> _loadWebTextBookFromXFiles(List<XFile> files) async {
+    final List<GeneratedChapter> chapters = <GeneratedChapter>[];
+    final List<String> displayNames = <String>[];
+    final List<String> sourceNames = <String>[];
+
+    for (final XFile file in files) {
+      final String name = file.name.trim().isEmpty ? 'capitulo.txt' : file.name;
+      if (!_isSupportedTextPath(name)) {
+        continue;
+      }
+
+      final Uint8List bytes = await file.readAsBytes();
+      final String rawContent = utf8.decode(bytes, allowMalformed: true);
+      chapters.add(
+        GeneratedChapter(
+          title: _deriveChapterTitle(name),
+          content: _normalizeImportedText(rawContent, name),
+        ),
+      );
+      displayNames.add(name);
+      sourceNames.add('$name:${bytes.length}:${_stableBytesHash(bytes)}');
+    }
+
+    if (chapters.isEmpty) {
+      throw StateError(
+        'Nenhum arquivo de texto valido foi encontrado para importar.',
+      );
+    }
+
+    final String title = _inferTitleFromFiles(displayNames);
+    final String importId = _stableHash(sourceNames.join('|'));
+    final List<String> chapterPaths = await _writeManagedChapters(
+      baseFolderName: 'imported_text_books',
+      bookId: importId,
+      chapters: chapters,
+    );
+    final BookReference reference = BookReference(
+      title: title,
+      format: BookFormat.text,
+      sourceLabel: 'Arquivos importados no navegador',
+      assetPaths: chapterPaths,
+    );
+
+    return _buildTextBook(
+      title: title,
+      format: BookFormat.text,
+      reference: reference,
+      filePaths: chapterPaths,
+      id: _buildFileBookId(BookFormat.text, chapterPaths),
+    );
+  }
+
+  Future<Book> _loadWebStoredTextBook(BookReference reference) async {
+    final List<String> existingPaths = <String>[];
+    for (final String path in reference.assetPaths) {
+      if (_isWebStoredPath(path) && await _storage.exists(_storageKey(path))) {
+        existingPaths.add(path);
+      }
+    }
+
+    if (existingPaths.isEmpty) {
+      throw StateError(
+        'Os capitulos salvos no navegador nao foram encontrados. Reimporte o livro neste dispositivo.',
+      );
+    }
+
+    return _buildTextBook(
+      title: reference.title,
+      format: reference.format,
+      reference: reference.copyWith(assetPaths: existingPaths),
+      filePaths: existingPaths,
+      id: _buildFileBookId(reference.format, existingPaths),
+    );
+  }
+
   Future<Book> loadEpubBook(String sourcePath) async {
     final String normalizedPath = p.normalize(sourcePath);
     if (!await File(normalizedPath).exists()) {
@@ -474,12 +607,63 @@ class BookService {
     );
   }
 
+  Future<Book> loadEpubBookFromBytes(
+    Uint8List bytes, {
+    required String sourceName,
+  }) async {
+    final EpubBookRef epubBookRef = await EpubReader.openBook(bytes);
+    final EpubMetadata? metadata = epubBookRef.Schema?.Package?.Metadata;
+    final String title = (epubBookRef.Title ?? '').trim().isEmpty
+        ? p.basenameWithoutExtension(sourceName)
+        : epubBookRef.Title!.trim();
+    final List<GeneratedChapter> generatedChapters =
+        await _readEpubGeneratedChapters(epubBookRef);
+
+    if (generatedChapters.isEmpty) {
+      throw StateError('Nao foi possivel extrair capitulos legiveis do EPUB.');
+    }
+
+    final String importId =
+        _stableHash('$sourceName:${bytes.length}:${_stableBytesHash(bytes)}');
+    final List<String> chapterPaths = await _writeManagedChapters(
+      baseFolderName: 'imported_epub_books',
+      bookId: importId,
+      chapters: generatedChapters,
+    );
+    final String? coverPath = await _extractEpubCover(epubBookRef, importId);
+    final _EpubMetadataResult metadataResult = _extractEpubMetadata(metadata);
+    final BookReference reference = BookReference(
+      title: title,
+      format: BookFormat.epub,
+      sourceLabel: 'EPUB convertido no navegador',
+      coverPath: coverPath,
+      author: metadataResult.author,
+      description: metadataResult.description,
+      series: metadataResult.series,
+      volume: metadataResult.volume,
+      tags: metadataResult.tags,
+      assetPaths: chapterPaths,
+    );
+
+    return _buildTextBook(
+      title: title,
+      format: BookFormat.epub,
+      reference: reference,
+      filePaths: chapterPaths,
+      id: _buildFileBookId(BookFormat.epub, chapterPaths),
+    );
+  }
+
   Future<Book> loadPdfBook(
     String sourcePath, {
     String? preferredTitle,
     String? preferredCoverPath,
     required bool copyToManagedStorage,
   }) async {
+    if (kIsWeb) {
+      throw StateError('PDF ainda nao esta disponivel na versao Web.');
+    }
+
     final String normalizedPath = p.normalize(sourcePath);
     if (!await File(normalizedPath).exists()) {
       throw StateError('O arquivo PDF selecionado nao existe.');
@@ -649,25 +833,11 @@ class BookService {
       return cached;
     }
 
-    final String extension = p.extension(chapter.path).toLowerCase();
-    final String rawContent = await File(chapter.path).readAsString();
-    late final String normalizedContent;
-
-    switch (extension) {
-      case '.md':
-      case '.markdown':
-        normalizedContent =
-            _htmlToPlainText(markdown.markdownToHtml(rawContent));
-        break;
-      case '.html':
-      case '.htm':
-      case '.xhtml':
-        normalizedContent = _htmlToPlainText(rawContent);
-        break;
-      default:
-        normalizedContent = rawContent.replaceAll('\r\n', '\n').trimRight();
-        break;
-    }
+    final String rawContent = _isWebStoredPath(chapter.path)
+        ? await _readWebStoredChapter(chapter.path)
+        : await File(chapter.path).readAsString();
+    final String normalizedContent =
+        _normalizeImportedText(rawContent, chapter.path);
 
     _chapterContentCache[cacheKey] = normalizedContent;
     _trimChapterCache();
@@ -905,6 +1075,13 @@ class BookService {
   Future<List<String>> _normalizeExistingPaths(List<String> paths) async {
     final List<String> normalizedPaths = <String>[];
     for (final String path in paths) {
+      if (_isWebStoredPath(path)) {
+        if (await _storage.exists(_storageKey(path))) {
+          normalizedPaths.add(path);
+        }
+        continue;
+      }
+
       final String normalizedPath = p.normalize(path);
       if (await File(normalizedPath).exists() &&
           _isSupportedTextPath(normalizedPath)) {
@@ -965,6 +1142,20 @@ class BookService {
     required String bookId,
     required List<GeneratedChapter> chapters,
   }) async {
+    if (kIsWeb) {
+      final String rootKey =
+          'profiles/$_activeProfileId/storage/$baseFolderName/$bookId';
+      final List<String> chapterPaths = <String>[];
+      for (int index = 0; index < chapters.length; index++) {
+        final String safeTitle = _sanitizeFileName(chapters[index].title);
+        final String fileName = '${index + 1} - $safeTitle.txt';
+        final String key = '$rootKey/$fileName';
+        await _storage.writeString(key, chapters[index].content.trim());
+        chapterPaths.add(_webPath(key));
+      }
+      return chapterPaths;
+    }
+
     final Directory bookDirectory = Directory(
       p.join((await _profileStorageDirectory(baseFolderName)).path, bookId),
     );
@@ -1042,6 +1233,15 @@ class BookService {
   Future<String> _writeCoverImage(img.Image image, String bookId) async {
     final img.Image normalizedImage =
         image.width > 720 ? img.copyResize(image, width: 720) : image;
+    final List<int> pngBytes = img.encodePng(normalizedImage);
+
+    if (kIsWeb) {
+      final String key =
+          'profiles/$_activeProfileId/storage/book_covers/${_stableHash(bookId)}/cover.png';
+      await _storage.writeBytes(key, pngBytes);
+      return _webPath(key);
+    }
+
     final Directory coverDirectory = Directory(
       p.join(
         (await _profileStorageDirectory('book_covers')).path,
@@ -1052,7 +1252,7 @@ class BookService {
 
     final File coverFile = File(p.join(coverDirectory.path, 'cover.png'));
     await coverFile.writeAsBytes(
-      img.encodePng(normalizedImage),
+      pngBytes,
       flush: true,
     );
     return coverFile.path;
@@ -1077,6 +1277,10 @@ class BookService {
   Future<String?> _resolveExistingCoverPath(String? coverPath) async {
     if (coverPath == null || coverPath.isEmpty) {
       return null;
+    }
+
+    if (_isWebStoredPath(coverPath)) {
+      return await _storage.exists(_storageKey(coverPath)) ? coverPath : null;
     }
 
     final String normalizedPath = p.normalize(coverPath);
@@ -1225,11 +1429,18 @@ class BookService {
   String _inferTitleFromFiles(List<String> filePaths) {
     final Set<String> parentNames = filePaths
         .map((String path) => p.basename(p.dirname(path)))
-        .where((String name) => name.isNotEmpty)
+        .where((String name) => name.isNotEmpty && name != '.')
         .toSet();
 
     if (parentNames.length == 1) {
       return parentNames.first;
+    }
+
+    if (filePaths.length == 1) {
+      final String fileTitle = p.basenameWithoutExtension(filePaths.single);
+      if (fileTitle.trim().isNotEmpty) {
+        return _normalizeDisplayTitle(fileTitle);
+      }
     }
 
     return 'Livro importado';
@@ -1257,6 +1468,41 @@ class BookService {
       '.bmp',
     };
     return supportedExtensions.contains(p.extension(path).toLowerCase());
+  }
+
+  Future<String> _readWebStoredChapter(String path) async {
+    final String? raw = await _storage.readString(_storageKey(path));
+    if (raw == null) {
+      throw StateError(
+        'O capitulo salvo no navegador nao foi encontrado. Reimporte o livro neste dispositivo.',
+      );
+    }
+    return raw;
+  }
+
+  String _normalizeImportedText(String rawContent, String sourcePath) {
+    final String extension = p.extension(sourcePath).toLowerCase();
+    switch (extension) {
+      case '.md':
+      case '.markdown':
+        return _htmlToPlainText(markdown.markdownToHtml(rawContent));
+      case '.html':
+      case '.htm':
+      case '.xhtml':
+        return _htmlToPlainText(rawContent);
+      default:
+        return rawContent.replaceAll('\r\n', '\n').trimRight();
+    }
+  }
+
+  bool _isWebStoredPath(String path) => path.startsWith(_webStoredPrefix);
+
+  String _storageKey(String webPath) {
+    return normalizeStorageKey(webPath.replaceFirst(_webStoredPrefix, ''));
+  }
+
+  String _webPath(String storageKey) {
+    return '$_webStoredPrefix${normalizeStorageKey(storageKey)}';
   }
 
   String _normalizeDisplayTitle(String value) {
@@ -1325,6 +1571,15 @@ class BookService {
     return hash.toUnsigned(32).toRadixString(16).padLeft(8, '0');
   }
 
+  String _stableBytesHash(List<int> bytes) {
+    int hash = 2166136261;
+    for (final int byte in bytes) {
+      hash ^= byte;
+      hash = (hash * 16777619) & 0xffffffff;
+    }
+    return hash.toUnsigned(32).toRadixString(16).padLeft(8, '0');
+  }
+
   String _sanitizeFileName(String value) {
     return value
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
@@ -1339,7 +1594,7 @@ class BookService {
   }
 
   XTypeGroup get _textTypeGroup {
-    if (Platform.isIOS) {
+    if (!kIsWeb && Platform.isIOS) {
       return const XTypeGroup(
         label: 'Text',
         uniformTypeIdentifiers: <String>[
@@ -1358,7 +1613,7 @@ class BookService {
   }
 
   XTypeGroup get _epubTypeGroup {
-    if (Platform.isIOS) {
+    if (!kIsWeb && Platform.isIOS) {
       return const XTypeGroup(
         label: 'EPUB',
         uniformTypeIdentifiers: <String>['org.idpf.epub-container'],
@@ -1373,7 +1628,7 @@ class BookService {
   }
 
   XTypeGroup get _pdfTypeGroup {
-    if (Platform.isIOS) {
+    if (!kIsWeb && Platform.isIOS) {
       return const XTypeGroup(
         label: 'PDF',
         uniformTypeIdentifiers: <String>['com.adobe.pdf'],
@@ -1388,7 +1643,7 @@ class BookService {
   }
 
   XTypeGroup get _imageTypeGroup {
-    if (Platform.isIOS) {
+    if (!kIsWeb && Platform.isIOS) {
       return const XTypeGroup(
         label: 'Image',
         uniformTypeIdentifiers: <String>['public.image'],

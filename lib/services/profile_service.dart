@@ -2,13 +2,17 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/app_profile.dart';
+import 'storage/app_storage.dart';
 
 class ProfileService {
   static const String _defaultProfileId = 'principal';
+
+  final AppStorage _storage = createAppStorage();
 
   Future<List<AppProfile>> loadProfiles() async {
     final _ProfileIndex index = await _loadIndex();
@@ -36,7 +40,9 @@ class ProfileService {
     index.profiles.add(profile);
     index.currentProfileId = profile.id;
     await _saveIndex(index);
-    await profileDirectory(profile.id);
+    if (!kIsWeb) {
+      await profileDirectory(profile.id);
+    }
     return profile;
   }
 
@@ -69,7 +75,9 @@ class ProfileService {
 
     index.currentProfileId = profile.id;
     await _saveIndex(index);
-    await profileDirectory(profile.id);
+    if (!kIsWeb) {
+      await profileDirectory(profile.id);
+    }
     return profile;
   }
 
@@ -85,14 +93,16 @@ class ProfileService {
     }
 
     await _saveIndex(index);
-
-    final Directory directory = await profileDirectory(profileId);
-    if (await directory.exists()) {
-      await directory.delete(recursive: true);
-    }
+    await _storage.deletePrefix('profiles/$profileId');
   }
 
   Future<Directory> profilesRootDirectory() async {
+    if (kIsWeb) {
+      throw UnsupportedError(
+        'Diretorios locais estao disponiveis apenas no desktop.',
+      );
+    }
+
     final Directory documentsDirectory =
         await getApplicationDocumentsDirectory();
     final Directory directory =
@@ -109,39 +119,26 @@ class ProfileService {
   }
 
   Future<_ProfileIndex> _loadIndex() async {
-    final File file = await _indexFile();
-    if (!await file.exists()) {
-      final _ProfileIndex index = _ProfileIndex(
-        currentProfileId: _defaultProfileId,
-        profiles: <AppProfile>[
-          AppProfile(
-            id: _defaultProfileId,
-            name: 'Principal',
-            createdAt: DateTime.now(),
-          ),
-        ],
+    final String? raw = await _storage.readString(_indexKey);
+    if (raw == null || raw.trim().isEmpty) {
+      final _ProfileIndex index = _defaultIndex();
+      await _saveIndex(index);
+      return index;
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      final _ProfileIndex index = _defaultIndex();
+      await _storage.writeString(
+        'profiles/profiles_index.corrupt.${DateTime.now().microsecondsSinceEpoch}.json',
+        raw,
       );
       await _saveIndex(index);
       return index;
     }
 
-    final String raw = await file.readAsString();
-    if (raw.trim().isEmpty) {
-      final _ProfileIndex index = _ProfileIndex(
-        currentProfileId: _defaultProfileId,
-        profiles: <AppProfile>[
-          AppProfile(
-            id: _defaultProfileId,
-            name: 'Principal',
-            createdAt: DateTime.now(),
-          ),
-        ],
-      );
-      await _saveIndex(index);
-      return index;
-    }
-
-    final dynamic decoded = jsonDecode(raw);
     final List<AppProfile> profiles = decoded is Map<String, dynamic>
         ? (decoded['profiles'] as List<dynamic>? ?? const <dynamic>[])
             .whereType<Map<String, dynamic>>()
@@ -177,9 +174,8 @@ class ProfileService {
   }
 
   Future<void> _saveIndex(_ProfileIndex index) async {
-    final File file = await _indexFile();
-    await file.parent.create(recursive: true);
-    await file.writeAsString(
+    await _storage.writeString(
+      _indexKey,
       jsonEncode(
         <String, dynamic>{
           'currentProfileId': index.currentProfileId,
@@ -188,14 +184,23 @@ class ProfileService {
               .toList(),
         },
       ),
-      flush: true,
     );
   }
 
-  Future<File> _indexFile() async {
-    final Directory root = await profilesRootDirectory();
-    return File(p.join(root.path, 'profiles_index.json'));
+  _ProfileIndex _defaultIndex() {
+    return _ProfileIndex(
+      currentProfileId: _defaultProfileId,
+      profiles: <AppProfile>[
+        AppProfile(
+          id: _defaultProfileId,
+          name: 'Principal',
+          createdAt: DateTime.now(),
+        ),
+      ],
+    );
   }
+
+  String get _indexKey => 'profiles/profiles_index.json';
 }
 
 class _ProfileIndex {
