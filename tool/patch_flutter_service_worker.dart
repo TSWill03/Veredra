@@ -54,8 +54,16 @@ const RESOURCES = ''',
   }
 
   if (!source.contains('function respondWithCachedIndex(event)')) {
+    const String messageListener =
+        "self.addEventListener('message', (event) => {";
+    if (!source.contains(messageListener)) {
+      stderr.writeln('Could not find service worker message listener.');
+      exitCode = 1;
+      return;
+    }
+
     source = source.replaceFirst(
-      "self.addEventListener('message', (event) => {",
+      messageListener,
       '''
 function respondWithCachedIndex(event) {
   return event.respondWith(
@@ -79,17 +87,27 @@ function respondWithCachedIndex(event) {
 
 self.addEventListener('message', (event) => {''',
     );
+  }
 
-    source = source.replaceFirst(
-      "  if (event.request.method !== 'GET') {\n"
-          '    return;\n'
-          '  }\n',
-      "  if (event.request.method !== 'GET') {\n"
-          '    return;\n'
-          '  }\n'
-          "  if (event.request.mode === 'navigate') {\n"
-          '    return respondWithCachedIndex(event);\n'
-          '  }\n',
+  if (!source.contains("event.request.mode === 'navigate'")) {
+    final RegExp getMethodCheck = RegExp(
+      "  if \\(event\\.request\\.method !== 'GET'\\) \\{\\r?\\n"
+      '    return;\\r?\\n'
+      '  \\}\\r?\\n',
+    );
+    final Match? match = getMethodCheck.firstMatch(source);
+    if (match == null) {
+      stderr.writeln('Could not find service worker GET method guard.');
+      exitCode = 1;
+      return;
+    }
+
+    source = source.replaceRange(
+      match.end,
+      match.end,
+      "  if (event.request.mode === 'navigate') {\n"
+      '    return respondWithCachedIndex(event);\n'
+      '  }\n',
     );
   }
 
