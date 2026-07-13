@@ -1,27 +1,35 @@
 <!-- Signature: dev.tswicolly03 -->
 # Roadmap
 
-## P1
+## Concluido nesta base
 
-- IndexedDB/OPFS para livros Web grandes.
-- Teste automatizado de PWA offline com browser real.
-- Backup Web export/import sem depender de caminhos locais.
-- Restauracao em diretorio temporario com promocao atomica no desktop.
-- Limites de tamanho para importacao de livros.
+- IndexedDB Web com migracao legada;
+- interfaces e UI de auth/sync;
+- Supabase schema, RLS, grants, Storage e pgTAP;
+- fila offline, retry, dedupe, tombstones e conflitos;
+- limites de importacao, HTML seguro e diagnostico redigido;
+- CI Web/Android/Windows/Supabase/Playwright;
+- rota PWA case-sensitive `/Veredra/`.
 
-## P2
+## Proxima entrega - beta controlada
 
-- Reorganizacao gradual por features.
-- Repositorios e casos de uso para importacao, leitura e backup.
-- Logs estruturados sem conteudo privado.
-- Painel de diagnostico local.
-- Indexacao incremental de busca.
+- provisionar Supabase staging, SMTP e OAuth Google;
+- rodar E2E real de cadastro, confirmacao, recovery e duas sessoes;
+- criar keystore/upload key e instalador Windows com `veredra://`;
+- terminar checklist manual de todos os formatos/backup;
+- preview Cloudflare, smoke test e aprovacao dos PRs;
+- publicar privacidade e suporte.
 
-## P3
+## Depois da beta
 
-- Criptografia opcional por perfil.
-- Senha local opcional por perfil.
-- Sincronizacao entre dispositivos.
-- Mobile-first polish.
-- Traducao com fila/cancelamento/progresso mais detalhado.
+- upload completo opt-in com quota/checksum/resume/delete;
+- PDF e backup Web;
+- Drift/SQLite/OPFS conforme evidencias de escala;
+- painel de diagnostico e telemetria estritamente opt-in;
+- dependencias major, SBOM, fuzz de importadores e teste de carga;
+- Linux, macOS e iOS.
 
+## Fora de escopo imediato
+
+CQRS amplo, reescrita visual total e refatoracao cosmetica. Priorizar perda de
+dados, isolamento, recuperacao, observabilidade e experiencia offline.

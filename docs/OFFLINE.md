@@ -14,9 +14,12 @@ Objetivo do MVP Web:
 - Biblioteca, progresso, notas, marcadores, estatisticas e perfis usam storage compativel com Web.
 - O usuario consegue fechar o navegador, abrir de novo e continuar lendo livros importados.
 
-## Limitacoes Web conhecidas
+## Persistencia e limitacoes Web
 
-- O storage Web atual usa `shared_preferences_web`, adequado para MVP e livros pequenos/medios, mas limitado por quota do navegador.
+- O storage Web usa IndexedDB para strings e bytes e migra automaticamente as
+  chaves antigas de `shared_preferences_web`.
+- Quota e despejo continuam sujeitos ao navegador; o usuario deve manter backup
+  dos dados importantes.
 - PDF ainda nao esta disponivel na versao Web.
 - Importacao por pasta esta disponivel apenas no desktop.
 - Backup/restauracao ainda esta disponivel apenas no desktop.
@@ -24,9 +27,10 @@ Objetivo do MVP Web:
 
 ## Evolucao recomendada
 
-- Migrar livros/capitulos da Web para IndexedDB ou OPFS.
+- Avaliar OPFS para blobs muito grandes, preservando fallback IndexedDB.
 - Criar manifest local com `schemaVersion`, `appVersion`, `profileId`, `createdAt` e `updatedAt`.
-- Adicionar testes de browser para reabrir PWA offline com livro importado.
+- Expandir os testes de browser existentes para livros grandes e upgrade entre
+  versoes do service worker.
 - Expor uso de armazenamento/quota para o usuario.
 
 ## Estrategia de schema local

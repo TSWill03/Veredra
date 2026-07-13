@@ -1,37 +1,59 @@
 <!-- Signature: dev.tswicolly03 -->
-# Production readiness
+# Prontidao para producao
+
+Data da auditoria: 2026-07-13.
 
 ## P0
 
-Nenhum P0 bloqueando build/teste foi encontrado apos as correcoes. Antes de distribuicao publica ampla, a decisao de licenca precisa ser feita pelo autor.
+Corrigidos:
+
+- livros/capitulos grandes na Web sairam de SharedPreferences para IndexedDB;
+- APK release nao usa mais certificado debug;
+- tabelas Supabase receberam grants `authenticated` e revoke `anon`; pgTAP
+  provou RLS depois de detectar o grant ausente;
+- rota Web foi normalizada para `/Veredra/`.
+
+Bloqueios externos restantes:
+
+- nenhum projeto Supabase/SMTP/Google de producao foi fornecido;
+- APK release ainda nao tem keystore de producao;
+- deploy live depende de merge/aprovacao e acesso Cloudflare.
 
 ## P1
 
-- Web ainda usa `shared_preferences_web`; migrar para IndexedDB/OPFS para livros grandes.
-- Backup Web ainda nao esta implementado.
-- PDF Web ainda nao esta implementado.
-- Importacao precisa de limites configuraveis de tamanho.
-- Falta teste automatizado de navegador para provar importacao + reload + offline.
+Implementados:
+
+- auth, recovery, Google OAuth, sessao segura e exclusao de conta;
+- sync offline-first com consentimento, retry, conflito e tombstones;
+- RLS/Storage privado e testes de usuario cruzado;
+- limites/sanitizacao de importacao e diagnosticos redigidos;
+- builds Web/Windows/Android, Playwright e CI multiplataforma;
+- UI responsiva de conta/sync e fallbacks locais.
+
+Pendentes para beta publica:
+
+- validar e-mail, Google e sync real entre duas sessoes no staging hospedado;
+- assinar APK e registrar protocolo do instalador Windows;
+- executar checklist manual completo de formatos/backup em Android e desktop;
+- publicar politica legal de privacidade e canal de suporte.
 
 ## P2
 
-- `BookService`, `LibraryPage` e `ReaderPage` seguem grandes.
-- Observabilidade ainda e basica.
-- Traducao local precisa de ambiente virtual isolado e confirmacao mais explicita antes do `pip install`.
-- CI cobre analyze/test, mas nao build de plataformas.
+- PDF/backup Web;
+- upload completo com consentimento, quota, retomada e exclusao;
+- Drift/SQLite e outbox transacional;
+- reduzir `LibraryPage`, `ReaderPage` e servicos legados;
+- audit de dependencias major e observabilidade remota opt-in.
 
 ## P3
 
-- Criptografia/senha por perfil.
-- Sync multi-dispositivo.
-- CQRS somente se a busca/indexacao crescer.
+- Linux/macOS/iOS com associacoes OAuth e testes nativos;
+- criptografia/senha opcional para perfil local;
+- indexacao incremental de busca e sync de arquivos avancado.
 
-## Estado apos esta rodada
+## Veredito
 
-- `flutter analyze` passa.
-- `flutter test` passa.
-- `flutter build web --release --base-href /veredra/` passa.
-- PWA tem nome, tema e manifest de Veredra.
-- Fallbacks Web existem para recursos desktop-only.
-- Nenhuma licenca foi aplicada.
-
+O app esta tecnicamente mais proximo de uma beta controlada, mas nao deve ser
+declarado pronto para beta publica enquanto os quatro itens P1 externos acima
+nao forem comprovados. Nao esta pronto para producao. Builds locais aprovados
+nao substituem auth hospedado, assinatura, deploy e smoke test live.

@@ -1,33 +1,73 @@
 <!-- Signature: dev.tswicolly03 -->
 # Testes
 
-## Comandos obrigatorios
+## Matriz obrigatoria
 
 ```bash
 flutter pub get
 dart format --set-exit-if-changed .
 flutter analyze
-flutter test
-flutter build web --release --base-href /veredra/
+flutter test --coverage
+dart run tool/check_repository_security.dart
+dart run tool/validate_migrations.dart
+flutter build web --release --base-href /Veredra/
+dart run tool/patch_flutter_service_worker.dart
+dart run tool/validate_web_build.dart
+flutter build apk --debug
+flutter build windows --release
 ```
 
-## Cobertura atual
+## Banco
 
-- Serializacao de `BookReference`.
-- Clamp de `ReadingProgress`.
-- Fallback de fonte do leitor.
-- Disponibilidade de referencia local.
-- Normalizacao de capitulo Markdown.
-- Preservacao de caminhos `veredra://` para capitulos persistidos no navegador.
+```bash
+npx supabase start
+npx supabase db reset
+npx supabase db lint --local --level warning
+npx supabase test db
+```
 
-## Testes recomendados
+O pgTAP possui 10 assercoes: insert proprio, insert cruzado negado, select e
+update isolados, progresso proprio/cruzado e prefixos Storage proprio/cruzado.
 
-- Parsing TXT/MD/HTML/EPUB com arquivos invalidos.
-- Busca textual em livros grandes.
-- Progresso de leitura ao reabrir livro.
-- Backup export/import com snapshot valido.
-- Backup corrompido, path traversal e ZIP bomb simulado de forma segura.
-- Perfis, favoritos, anotacoes e marcadores.
-- Falhas de Python, Argos ausente e modelo ausente.
-- Web/PWA com importacao, reload e modo offline em browser real.
+## Browser/PWA
 
+```bash
+cd e2e
+npm ci
+npx playwright install chromium
+npm test
+```
+
+O servidor E2E hospeda exclusivamente em `/Veredra/` e testa Chromium desktop e
+viewport mobile: carga, importacao TXT Unicode, abertura, retorno a biblioteca,
+reload com IndexedDB, shell offline e redirect sem barra.
+
+Auth/sync hospedado e condicional:
+
+```text
+VEREDRA_E2E_EMAIL
+VEREDRA_E2E_PASSWORD
+```
+
+Use somente conta de staging. Sem as variaveis, os testes sao `skipped`; nao
+conte como validacao real.
+
+## Cobertura Flutter
+
+Inclui validacao de credenciais, loading/duplicidade, recuperacao, fila,
+deduplicacao, retry, corrupcao, consentimento, offline/reconexao, conflito de
+progresso, duas sessoes fake, import limits, HTML, serializacao e diagnosticos.
+
+## Testes manuais
+
+Registre data, plataforma, build e fluxo realmente executado. Nunca generalize
+um smoke test para todos os formatos. A checklist de importacao completa deve
+cobrir TXT/MD/HTML/EPUB/PDF, arquivos invalidos/grandes, Unicode, acentos,
+cancelamento, backup/restore e falha isolada por livro.
+
+## CI
+
+GitHub Actions falha em format, analyze, teste, scanner, contrato de migrations,
+build/rota Web, APK debug, build Windows, PWA E2E, db lint ou pgTAP. Artefatos
+Web/APK/Windows e cobertura sao anexados. Nao existe deploy automatico em
+producao.
