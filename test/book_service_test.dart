@@ -66,4 +66,27 @@ void main() {
 
     expect(decoded.assetPaths.single, startsWith('veredra://'));
   });
+
+  test('HTML import strips executable and embedded content', () async {
+    final Directory tempDirectory =
+        await Directory.systemTemp.createTemp('veredra_html_test_');
+    addTearDown(() => tempDirectory.delete(recursive: true));
+    final File chapter = File('${tempDirectory.path}/capitulo.html');
+    await chapter.writeAsString(
+      '<html><body><h1>Capitulo</h1><script>alert("x")</script>'
+      '<style>.x{display:none}</style><p>Texto seguro.</p></body></html>',
+    );
+    final BookService service = BookService();
+    final book = await service.loadTextBookFromFiles(
+      <String>[chapter.path],
+      sourceLabel: 'Teste',
+      copyToManagedStorage: false,
+    );
+
+    final String content =
+        await service.readChapterContent(book.chapters.first);
+    expect(content, contains('Texto seguro.'));
+    expect(content, isNot(contains('alert')));
+    expect(content, isNot(contains('display:none')));
+  });
 }
