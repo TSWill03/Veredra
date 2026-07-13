@@ -21,7 +21,8 @@ dependencies:
   image: ^3.3.0
   html: ^0.15.6
   markdown: ^7.3.0
-  connectivity_plus: ^7.2.0
+  # 7.1+ requires Xcode 26.1.1; keep CI and current stable Xcode compatible.
+  connectivity_plus: 7.0.0
   flutter_secure_storage: ^10.3.1
   idb_shim: 2.9.2
   supabase_flutter: ^2.16.0
