@@ -32,6 +32,17 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/e2e/node_modules/
+/e2e/playwright-report/
+/e2e/test-results/
+.env
+.env.*
+!.env.example
+/supabase/.temp/
+/supabase/.branches/
+/android/key.properties
+*.jks
+*.keystore
 
 # Symbolication related
 app.*.symbols

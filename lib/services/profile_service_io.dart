@@ -28,6 +28,22 @@ class ProfileService {
     return current ?? index.profiles.first;
   }
 
+  Future<void> upsertSyncedProfile(AppProfile profile) async {
+    if (profile.id.trim().isEmpty) {
+      return;
+    }
+    final _ProfileIndex index = await _loadIndex();
+    final int existing = index.profiles.indexWhere(
+      (AppProfile item) => item.id == profile.id,
+    );
+    if (existing >= 0) {
+      index.profiles[existing] = profile;
+    } else {
+      index.profiles.add(profile);
+    }
+    await _saveIndex(index);
+  }
+
   Future<AppProfile> createProfile(String name) async {
     final _ProfileIndex index = await _loadIndex();
     final String normalizedName = name.trim().isEmpty ? 'Usuario' : name.trim();

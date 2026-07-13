@@ -1,7 +1,9 @@
 {
     "name": "Veredra",
     "short_name": "Veredra",
-    "start_url": ".",
+    "id": "/Veredra/",
+    "start_url": "/Veredra/",
+    "scope": "/Veredra/",
     "display": "standalone",
     "background_color": "#101315",
     "theme_color": "#8C6B43",

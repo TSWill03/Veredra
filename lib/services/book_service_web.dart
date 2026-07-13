@@ -19,6 +19,7 @@ import '../models/generated_chapter.dart';
 import '../models/library_entry.dart';
 import '../models/library_search_result.dart';
 import '../models/translation_language.dart';
+import 'import_limits.dart';
 import 'storage/app_storage.dart';
 
 enum ImportKind { textFolder, textFiles, epub, pdf }
@@ -109,6 +110,11 @@ class BookService {
       return null;
     }
 
+    ImportLimits.validateFileSize(
+      ImportPayloadKind.image,
+      await file.length(),
+      label: 'A imagem',
+    );
     final Uint8List bytes = await file.readAsBytes();
     final img.Image? image = img.decodeImage(bytes);
     if (image == null) {
@@ -348,6 +354,9 @@ class BookService {
     final List<GeneratedChapter> chapters = <GeneratedChapter>[];
     final List<String> displayNames = <String>[];
     final List<String> sourceNames = <String>[];
+    ImportLimits.validateTextCollection(
+      await Future.wait(files.map((XFile file) => file.length())),
+    );
 
     for (final XFile file in files) {
       final String name = file.name.trim().isEmpty ? 'capitulo.txt' : file.name;
@@ -355,6 +364,8 @@ class BookService {
         continue;
       }
 
+      final int fileLength = await file.length();
+      ImportLimits.validateTextCollection(<int>[fileLength]);
       final Uint8List bytes = await file.readAsBytes();
       final String rawContent = utf8.decode(bytes, allowMalformed: true);
       chapters.add(
@@ -429,6 +440,11 @@ class BookService {
     Uint8List bytes, {
     required String sourceName,
   }) async {
+    ImportLimits.validateFileSize(
+      ImportPayloadKind.epub,
+      bytes.length,
+      label: 'O EPUB',
+    );
     final EpubBookRef epubBookRef = await EpubReader.openBook(bytes);
     final EpubMetadata? metadata = epubBookRef.Schema?.Package?.Metadata;
     final String title = (epubBookRef.Title ?? '').trim().isEmpty
@@ -436,6 +452,9 @@ class BookService {
         : epubBookRef.Title!.trim();
     final List<GeneratedChapter> generatedChapters =
         await _readEpubGeneratedChapters(epubBookRef);
+    ImportLimits.validateExtractedText(
+      generatedChapters.map((GeneratedChapter chapter) => chapter.content),
+    );
 
     if (generatedChapters.isEmpty) {
       throw StateError('Nao foi possivel extrair capitulos legiveis do EPUB.');
@@ -1025,7 +1044,13 @@ class BookService {
         .replaceAll('<br>', '\n')
         .replaceAll('<br/>', '\n')
         .replaceAll('<br />', '\n');
-    final String parsed = html_parser.parse(normalized).body?.text ?? '';
+    final dynamic document = html_parser.parse(normalized);
+    for (final dynamic unsafe in document.querySelectorAll(
+      'script,style,iframe,object,embed,noscript',
+    )) {
+      unsafe.remove();
+    }
+    final String parsed = document.body?.text as String? ?? '';
     return parsed
         .replaceAll('\r\n', '\n')
         .replaceAll('\u00a0', ' ')

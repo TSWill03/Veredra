@@ -23,6 +23,7 @@ import '../models/generated_chapter.dart';
 import '../models/library_entry.dart';
 import '../models/library_search_result.dart';
 import '../models/translation_language.dart';
+import 'import_limits.dart';
 import 'storage/app_storage.dart';
 
 enum ImportKind { textFolder, textFiles, epub, pdf }
@@ -132,6 +133,11 @@ class BookService {
       return null;
     }
 
+    ImportLimits.validateFileSize(
+      ImportPayloadKind.image,
+      await file.length(),
+      label: 'A imagem',
+    );
     final Uint8List bytes = await file.readAsBytes();
     final img.Image? image = img.decodeImage(bytes);
     if (image == null) {
@@ -412,6 +418,7 @@ class BookService {
         'Nenhum arquivo de texto suportado foi encontrado na pasta.',
       );
     }
+    await _validateLocalTextFiles(filePaths);
 
     final String normalizedPath = p.normalize(folderPath);
     final String title = p.basename(normalizedPath);
@@ -449,6 +456,7 @@ class BookService {
         'Nenhum arquivo de texto valido foi encontrado para importar.',
       );
     }
+    await _validateLocalTextFiles(normalizedPaths);
 
     final List<String> finalPaths = copyToManagedStorage
         ? await _copyFilesToManagedStorage(
@@ -484,6 +492,9 @@ class BookService {
     final List<GeneratedChapter> chapters = <GeneratedChapter>[];
     final List<String> displayNames = <String>[];
     final List<String> sourceNames = <String>[];
+    ImportLimits.validateTextCollection(
+      await Future.wait(files.map((XFile file) => file.length())),
+    );
 
     for (final XFile file in files) {
       final String name = file.name.trim().isEmpty ? 'capitulo.txt' : file.name;
@@ -491,6 +502,8 @@ class BookService {
         continue;
       }
 
+      final int fileLength = await file.length();
+      ImportLimits.validateTextCollection(<int>[fileLength]);
       final Uint8List bytes = await file.readAsBytes();
       final String rawContent = utf8.decode(bytes, allowMalformed: true);
       chapters.add(
@@ -561,7 +574,13 @@ class BookService {
       throw StateError('O arquivo EPUB selecionado nao existe.');
     }
 
-    final List<int> bytes = await File(normalizedPath).readAsBytes();
+    final File epubFile = File(normalizedPath);
+    ImportLimits.validateFileSize(
+      ImportPayloadKind.epub,
+      await epubFile.length(),
+      label: 'O EPUB',
+    );
+    final List<int> bytes = await epubFile.readAsBytes();
     final EpubBookRef epubBookRef = await EpubReader.openBook(bytes);
     final EpubMetadata? metadata = epubBookRef.Schema?.Package?.Metadata;
     final String title = (epubBookRef.Title ?? '').trim().isEmpty
@@ -569,6 +588,9 @@ class BookService {
         : epubBookRef.Title!.trim();
     final List<GeneratedChapter> generatedChapters =
         await _readEpubGeneratedChapters(epubBookRef);
+    ImportLimits.validateExtractedText(
+      generatedChapters.map((GeneratedChapter chapter) => chapter.content),
+    );
 
     if (generatedChapters.isEmpty) {
       throw StateError('Nao foi possivel extrair capitulos legiveis do EPUB.');
@@ -611,6 +633,11 @@ class BookService {
     Uint8List bytes, {
     required String sourceName,
   }) async {
+    ImportLimits.validateFileSize(
+      ImportPayloadKind.epub,
+      bytes.length,
+      label: 'O EPUB',
+    );
     final EpubBookRef epubBookRef = await EpubReader.openBook(bytes);
     final EpubMetadata? metadata = epubBookRef.Schema?.Package?.Metadata;
     final String title = (epubBookRef.Title ?? '').trim().isEmpty
@@ -618,6 +645,9 @@ class BookService {
         : epubBookRef.Title!.trim();
     final List<GeneratedChapter> generatedChapters =
         await _readEpubGeneratedChapters(epubBookRef);
+    ImportLimits.validateExtractedText(
+      generatedChapters.map((GeneratedChapter chapter) => chapter.content),
+    );
 
     if (generatedChapters.isEmpty) {
       throw StateError('Nao foi possivel extrair capitulos legiveis do EPUB.');
@@ -668,6 +698,11 @@ class BookService {
     if (!await File(normalizedPath).exists()) {
       throw StateError('O arquivo PDF selecionado nao existe.');
     }
+    ImportLimits.validateFileSize(
+      ImportPayloadKind.pdf,
+      await File(normalizedPath).length(),
+      label: 'O PDF',
+    );
 
     final String finalPath = copyToManagedStorage
         ? await _copySingleFileToManagedStorage(
@@ -1072,6 +1107,19 @@ class BookService {
         : _normalizeDisplayTitle(fileTitle);
   }
 
+  Future<void> _validateLocalTextFiles(List<String> paths) async {
+    final List<int> sizes = <int>[];
+    for (final String path in paths) {
+      if (_isWebStoredPath(path)) {
+        final Uint8List? bytes = await _storage.readBytes(_storageKey(path));
+        sizes.add(bytes?.length ?? 0);
+      } else {
+        sizes.add(await File(path).length());
+      }
+    }
+    ImportLimits.validateTextCollection(sizes);
+  }
+
   Future<List<String>> _normalizeExistingPaths(List<String> paths) async {
     final List<String> normalizedPaths = <String>[];
     for (final String path in paths) {
@@ -1418,7 +1466,13 @@ class BookService {
         .replaceAll('<br>', '\n')
         .replaceAll('<br/>', '\n')
         .replaceAll('<br />', '\n');
-    final String parsed = html_parser.parse(normalized).body?.text ?? '';
+    final dynamic document = html_parser.parse(normalized);
+    for (final dynamic unsafe in document.querySelectorAll(
+      'script,style,iframe,object,embed,noscript',
+    )) {
+      unsafe.remove();
+    }
+    final String parsed = document.body?.text as String? ?? '';
     return parsed
         .replaceAll('\r\n', '\n')
         .replaceAll('\u00a0', ' ')

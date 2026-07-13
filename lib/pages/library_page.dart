@@ -23,11 +23,14 @@ import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/reading_stats_service.dart';
 import '../services/translation_service.dart';
+import '../services/auth/account_controller.dart';
+import '../services/sync/sync_coordinator.dart';
 import '../widgets/app_watermark_overlay.dart';
 import '../widgets/book_translation_dialog.dart';
 import '../widgets/platform_cover_image.dart';
 import '../widgets/translation_progress_dialog.dart';
 import 'about_page.dart';
+import 'account_page.dart';
 import 'global_search_page.dart';
 import 'notes_overview_page.dart';
 import 'reading_stats_page.dart';
@@ -52,6 +55,8 @@ class LibraryPage extends StatefulWidget {
     required this.progressService,
     required this.readingStatsService,
     required this.translationService,
+    required this.accountController,
+    required this.syncCoordinator,
     required this.lastBookReference,
     required this.fontSize,
     required this.readerFontPreset,
@@ -73,6 +78,8 @@ class LibraryPage extends StatefulWidget {
   final ProgressService progressService;
   final ReadingStatsService readingStatsService;
   final TranslationService translationService;
+  final AccountController accountController;
+  final SyncCoordinator? syncCoordinator;
   final BookReference? lastBookReference;
   final double fontSize;
   final ReaderFontPreset readerFontPreset;
@@ -698,6 +705,20 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
+  Future<void> _openAccountPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => AccountPage(
+          accountController: widget.accountController,
+          syncCoordinator: widget.syncCoordinator,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _refreshLibrary();
+    }
+  }
+
   Future<void> _switchProfile(AppProfile profile) async {
     await _runBusyTask(() async {
       final AppProfile nextProfile =
@@ -1254,6 +1275,16 @@ class _LibraryPageState extends State<LibraryPage> {
                 title: const Text('Biblioteca'),
                 centerTitle: false,
                 actions: <Widget>[
+                  IconButton(
+                    key: const Key('account-sync-button'),
+                    tooltip: 'Conta e sincronizacao',
+                    onPressed: _openAccountPage,
+                    icon: Icon(
+                      widget.accountController.isSignedIn
+                          ? Icons.cloud_done_rounded
+                          : Icons.cloud_off_rounded,
+                    ),
+                  ),
                   IconButton(
                     tooltip: 'Perfil e backup',
                     onPressed: _showProfileSheet,
