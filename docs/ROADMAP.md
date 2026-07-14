@@ -9,11 +9,11 @@
 - fila offline, retry, dedupe, tombstones e conflitos;
 - limites de importacao, HTML seguro e diagnostico redigido;
 - CI Web/Android/Windows/Supabase/Playwright;
-- rota PWA case-sensitive `/Veredra/`.
+- rota PWA canonica `/veredra/` com redirect permanente da variante maiuscula.
 
 ## Proxima entrega - beta controlada
 
-- provisionar Supabase staging, SMTP e OAuth Google;
+- validar Supabase hospedado e SMTP;
 - rodar E2E real de cadastro, confirmacao, recovery e duas sessoes;
 - criar keystore/upload key e instalador Windows com `veredra://`;
 - terminar checklist manual de todos os formatos/backup;
@@ -22,6 +22,7 @@
 
 ## Depois da beta
 
+- concluir e validar Google OAuth antes de habilitar `ENABLE_GOOGLE_AUTH`;
 - upload completo opt-in com quota/checksum/resume/delete;
 - PDF e backup Web;
 - Drift/SQLite/OPFS conforme evidencias de escala;

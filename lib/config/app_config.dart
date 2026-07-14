@@ -12,7 +12,7 @@ class AppConfig {
       String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
   static const String webAuthRedirectUrl = String.fromEnvironment(
     'AUTH_REDIRECT_URL',
-    defaultValue: 'https://wicolly.com.br/Veredra/',
+    defaultValue: 'https://wicolly.com.br/veredra/',
   );
   static const String nativeAuthRedirectUrl = String.fromEnvironment(
     'NATIVE_AUTH_REDIRECT_URL',
@@ -20,6 +20,10 @@ class AppConfig {
   );
   static const bool diagnosticsUploadEnabled = bool.fromEnvironment(
     'ENABLE_DIAGNOSTICS_UPLOAD',
+    defaultValue: false,
+  );
+  static const bool googleAuthEnabled = bool.fromEnvironment(
+    'ENABLE_GOOGLE_AUTH',
     defaultValue: false,
   );
 

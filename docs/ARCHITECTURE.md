@@ -26,7 +26,7 @@ lib/
 supabase/
   migrations/             # schema remoto versionado
   tests/database/         # pgTAP/RLS
-e2e/                      # servidor /Veredra/ e Playwright
+e2e/                      # servidor /veredra/ e Playwright
 ```
 
 Os modulos legados ainda sao organizados por tipo; a separacao por feature deve

@@ -7,12 +7,19 @@ import 'auth_gateway.dart';
 import 'auth_models.dart';
 
 class SupabaseAuthGateway implements AuthGateway {
-  SupabaseAuthGateway(this._client);
+  SupabaseAuthGateway(
+    this._client, {
+    bool? googleAuthEnabled,
+  }) : _googleAuthEnabled = googleAuthEnabled ?? AppConfig.googleAuthEnabled;
 
   final SupabaseClient _client;
+  final bool _googleAuthEnabled;
 
   @override
   bool get isConfigured => true;
+
+  @override
+  bool get isGoogleAuthEnabled => _googleAuthEnabled;
 
   @override
   AuthUser? get currentUser => _mapUser(_client.auth.currentUser);
@@ -95,6 +102,11 @@ class SupabaseAuthGateway implements AuthGateway {
 
   @override
   Future<AuthActionResult> signInWithGoogle() async {
+    if (!_googleAuthEnabled) {
+      throw StateError(
+        'A entrada com Google esta desativada nesta entrega.',
+      );
+    }
     try {
       final bool launched = await _client.auth.signInWithOAuth(
         OAuthProvider.google,

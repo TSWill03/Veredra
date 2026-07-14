@@ -258,24 +258,26 @@ class _AccountPageState extends State<AccountPage> {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        const Row(
-          children: <Widget>[
-            Expanded(child: Divider()),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('ou'),
-            ),
-            Expanded(child: Divider()),
-          ],
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          key: const Key('google-sign-in-button'),
-          onPressed: account.busy ? null : account.signInWithGoogle,
-          icon: const Icon(Icons.g_mobiledata_rounded),
-          label: const Text('Entrar com Google'),
-        ),
+        if (account.isGoogleAuthEnabled) ...<Widget>[
+          const SizedBox(height: 12),
+          const Row(
+            children: <Widget>[
+              Expanded(child: Divider()),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text('ou'),
+              ),
+              Expanded(child: Divider()),
+            ],
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            key: const Key('google-sign-in-button'),
+            onPressed: account.busy ? null : account.signInWithGoogle,
+            icon: const Icon(Icons.g_mobiledata_rounded),
+            label: const Text('Entrar com Google'),
+          ),
+        ],
       ],
     );
   }

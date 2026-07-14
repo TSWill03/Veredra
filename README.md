@@ -6,10 +6,10 @@ biblioteca local continua disponivel sem conta; quando um projeto Supabase e
 configurado, o usuario pode autenticar e sincronizar somente os dados de leitura
 que autorizou.
 
-URL Web canonica, com caixa exata:
+URL Web canonica:
 
 ```text
-https://wicolly.com.br/Veredra/
+https://wicolly.com.br/veredra/
 ```
 
 ## Recursos
@@ -19,7 +19,9 @@ https://wicolly.com.br/Veredra/
   anotacoes, estatisticas, capas, perfis e backup desktop;
 - storage nativo atomico e IndexedDB na Web, com migracao do storage legado;
 - conta por e-mail/senha, confirmacao de e-mail, recuperacao/redefinicao,
-  logout, renovacao de sessao, exclusao de conta e OAuth Google;
+  logout, renovacao de sessao e exclusao de conta;
+- implementacao de OAuth Google preservada atras de feature flag e desativada
+  nesta entrega;
 - sincronizacao offline-first de perfil, preferencias, metadados, progresso,
   marcadores, anotacoes, destaques, favoritos e estatisticas;
 - fila duravel, deduplicacao, retry com backoff, tombstones e resolucao
@@ -51,8 +53,9 @@ cliente Supabase:
 flutter run -d chrome \
   --dart-define=SUPABASE_URL=https://PROJECT.supabase.co \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=PUBLIC_KEY \
-  --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/Veredra/ \
-  --dart-define=NATIVE_AUTH_REDIRECT_URL=veredra://auth-callback/
+  --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/veredra/ \
+  --dart-define=NATIVE_AUTH_REDIRECT_URL=veredra://auth-callback/ \
+  --dart-define=ENABLE_GOOGLE_AUTH=false
 ```
 
 `SUPABASE_PUBLISHABLE_KEY` e configuracao publica de cliente. Nunca use
@@ -82,7 +85,7 @@ flutter test
 dart run tool/check_repository_security.dart
 dart run tool/validate_migrations.dart
 
-flutter build web --release --base-href /Veredra/
+flutter build web --release --base-href /veredra/
 dart run tool/patch_flutter_service_worker.dart
 dart run tool/validate_web_build.dart
 
@@ -115,19 +118,21 @@ provar compilacao, mas inadequado para distribuicao.
 ## Deploy Web
 
 ```bash
-flutter build web --release --base-href /Veredra/
+flutter build web --release --base-href /veredra/
 dart run tool/patch_flutter_service_worker.dart
 dart run tool/validate_web_build.dart
 ```
 
 O conteudo de `build/web` e publicado no repositorio `Wicolly-Sites` sob a pasta
-`Veredra`. O site deve manter:
+`veredra`. O site deve manter:
 
 ```text
-/Veredra  /Veredra/  301
+/veredra   /veredra/  301
+/Veredra   /veredra/  301
+/Veredra/* /veredra/:splat 301
 ```
 
-O fallback equivalente a `/Veredra/* -> /Veredra/index.html 200` e implementado
+O fallback equivalente a `/veredra/* -> /veredra/index.html 200` e implementado
 por uma Pages Function. O runtime Cloudflare rejeita a regra literal como loop
 porque o destino tambem casa com o wildcard.
 
@@ -135,9 +140,9 @@ Consulte `docs/DEPLOYMENT.md` antes de publicar.
 
 ## Limites atuais
 
-- login/sync reais dependem de projeto Supabase, SMTP e Google Cloud externos;
-- OAuth Windows requer instalador que registre `veredra://`; o executavel solto
-  apenas recebe o callback quando o protocolo ja esta registrado;
+- login/sync reais dependem de projeto Supabase, SMTP e conta de teste;
+- Google OAuth permanece desativado por `ENABLE_GOOGLE_AUTH=false`; a
+  implementacao sera retomada em entrega futura;
 - upload de livro/capa esta desabilitado ate existir UX de consentimento,
   medicao de quota, retomada e exclusao completa;
 - PDF, backup/restauracao e Argos Translate possuem fallbacks claros na Web;

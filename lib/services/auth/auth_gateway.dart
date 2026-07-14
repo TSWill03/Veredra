@@ -4,6 +4,8 @@ import 'auth_models.dart';
 abstract class AuthGateway {
   bool get isConfigured;
 
+  bool get isGoogleAuthEnabled;
+
   AuthUser? get currentUser;
 
   Stream<AuthSessionSnapshot> get sessionChanges;
@@ -38,6 +40,9 @@ class LocalOnlyAuthGateway implements AuthGateway {
 
   @override
   bool get isConfigured => false;
+
+  @override
+  bool get isGoogleAuthEnabled => false;
 
   @override
   AuthUser? get currentUser => null;

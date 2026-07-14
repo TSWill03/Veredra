@@ -15,15 +15,15 @@ void main(List<String> args) {
   }
   if (errors.isEmpty) {
     final String indexSource = index.readAsStringSync();
-    if (!indexSource.contains('<base href="/Veredra/">')) {
-      errors.add('index.html nao usa base href /Veredra/.');
+    if (!indexSource.contains('<base href="/veredra/">')) {
+      errors.add('index.html nao usa base href /veredra/.');
     }
     final Map<String, dynamic> manifestJson =
         jsonDecode(manifest.readAsStringSync()) as Map<String, dynamic>;
-    if (manifestJson['id'] != '/Veredra/' ||
-        manifestJson['start_url'] != '/Veredra/' ||
-        manifestJson['scope'] != '/Veredra/') {
-      errors.add('manifest.json nao fixa id/start_url/scope em /Veredra/.');
+    if (manifestJson['id'] != '/veredra/' ||
+        manifestJson['start_url'] != '/veredra/' ||
+        manifestJson['scope'] != '/veredra/') {
+      errors.add('manifest.json nao fixa id/start_url/scope em /veredra/.');
     }
     for (final dynamic icon
         in manifestJson['icons'] as List<dynamic>? ?? const <dynamic>[]) {
@@ -45,11 +45,22 @@ void main(List<String> args) {
         errors.add('Service worker sem marcador obrigatorio: $marker');
       }
     }
+    final RegExp navigationFallback = RegExp(
+      r"if \(event\.request\.method !== 'GET'\) \{\s*"
+      r"return;\s*\}\s*"
+      r"if \(event\.request\.mode === 'navigate'\) \{\s*"
+      r"return respondWithCachedIndex\(event\);\s*\}",
+    );
+    if (!navigationFallback.hasMatch(workerSource)) {
+      errors.add(
+        'Fallback de navegacao nao aparece imediatamente apos o guard GET.',
+      );
+    }
   }
   if (errors.isNotEmpty) {
     stderr.writeln(errors.join('\n'));
     exitCode = 1;
     return;
   }
-  stdout.writeln('Web/PWA build validado para /Veredra/.');
+  stdout.writeln('Web/PWA build validado para /veredra/.');
 }

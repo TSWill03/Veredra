@@ -5,10 +5,15 @@ import 'package:txt_webnovel_reader/services/auth/auth_gateway.dart';
 import 'package:txt_webnovel_reader/services/auth/auth_models.dart';
 
 class FakeAuthGateway implements AuthGateway {
-  FakeAuthGateway({this.user, this.delay = Duration.zero});
+  FakeAuthGateway({
+    this.user,
+    this.delay = Duration.zero,
+    this.googleAuthEnabled = false,
+  });
 
   AuthUser? user;
   Duration delay;
+  final bool googleAuthEnabled;
   int signInCalls = 0;
   int signUpCalls = 0;
   int resetCalls = 0;
@@ -22,6 +27,9 @@ class FakeAuthGateway implements AuthGateway {
 
   @override
   bool get isConfigured => true;
+
+  @override
+  bool get isGoogleAuthEnabled => googleAuthEnabled;
 
   @override
   Stream<AuthSessionSnapshot> get sessionChanges => controller.stream;

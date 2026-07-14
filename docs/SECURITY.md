@@ -16,10 +16,11 @@ recebe apenas SELECT/INSERT/UPDATE/DELETE, e cada policy exige
 `auth.uid() = user_id`; `anon` tem os grants revogados. pgTAP executa casos
 positivos do usuario A e tentativas negativas contra o usuario B.
 
-O bucket `veredra-books` e privado, aceita somente MIME/extensoes conhecidas,
-limita 100 MiB e exige que o primeiro segmento do caminho seja o UUID do
-usuario. Upload completo continua desligado ate o ciclo de exclusao e retomada
-ser implementado.
+O bucket `veredra-books` e privado, aceita somente MIME/extensoes conhecidas e
+exige que o primeiro segmento do caminho seja o UUID do usuario. A migration
+reserva 100 MiB por objeto, enquanto o limite global atual do projeto hospedado
+e 50 MiB. Upload completo continua desligado; antes de ativa-lo, esses limites
+precisam ser alinhados junto com o ciclo de exclusao e retomada.
 
 ## Importacao
 

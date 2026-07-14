@@ -6,17 +6,17 @@
 Todos os valores usam caixa exata:
 
 ```text
-base href: /Veredra/
-manifest id: /Veredra/
-start_url: /Veredra/
-scope: /Veredra/
-producao: https://wicolly.com.br/Veredra/
+base href: /veredra/
+manifest id: /veredra/
+start_url: /veredra/
+scope: /veredra/
+producao: https://wicolly.com.br/veredra/
 ```
 
 ## Build validado
 
 ```bash
-flutter build web --release --base-href /Veredra/
+flutter build web --release --base-href /veredra/
 dart run tool/patch_flutter_service_worker.dart
 dart run tool/validate_web_build.dart
 ```
@@ -33,7 +33,7 @@ npm ci
 npm test
 ```
 
-`server.mjs` redireciona `/Veredra` para `/Veredra/`, serve assets com MIME e
+`server.mjs` redireciona `/Veredra` para `/veredra/`, serve assets com MIME e
 headers corretos e aplica fallback SPA apenas sob o escopo. O Playwright valida
 desktop e viewport mobile, incluindo reload offline apos o service worker ficar
 pronto.
@@ -50,14 +50,16 @@ carregamento.
 O site deve conter:
 
 ```text
-/Veredra  /Veredra/  301
+/veredra   /veredra/  301
+/Veredra   /veredra/  301
+/Veredra/* /veredra/:splat 301
 ```
 
-Uma Pages Function restrita a `/Veredra/*` serve assets existentes e devolve
-`/Veredra/index.html` somente para navegacoes ausentes. A regra `_redirects`
+Uma Pages Function restrita a `/veredra/*` serve assets existentes e devolve
+`/veredra/index.html` somente para navegacoes ausentes. A regra `_redirects`
 literal de rewrite foi evitada porque o runtime Cloudflare a classifica como
-loop infinito. Service worker e `index.html` usam no-cache; redirects lowercase
-antigos apontam uma vez para o caminho canonico.
+loop infinito. Service worker e `index.html` usam no-cache; a variante com V
+maiusculo aponta uma vez para o caminho canonico.
 
 ## Fallbacks honestos
 

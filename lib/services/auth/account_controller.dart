@@ -29,6 +29,7 @@ class AccountController extends ChangeNotifier {
   String? noticeMessage;
 
   bool get isConfigured => _gateway.isConfigured;
+  bool get isGoogleAuthEnabled => _gateway.isGoogleAuthEnabled;
   bool get isSignedIn => user != null;
 
   Future<void> signUp(String email, String password) {

@@ -20,7 +20,7 @@ uma futura autorizacao separada e informada.
 ## Terceiros
 
 - Supabase processa auth e dados sincronizados quando configurado;
-- Google participa apenas se o usuario escolher OAuth;
+- Google OAuth esta desativado nesta entrega e nao recebe dados;
 - Argos Translate e local no desktop apos instalacao explicita;
 - nao ha analytics, publicidade nem upload de diagnostico por padrao.
 

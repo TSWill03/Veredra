@@ -11,11 +11,11 @@ Corrigidos:
 - APK release nao usa mais certificado debug;
 - tabelas Supabase receberam grants `authenticated` e revoke `anon`; pgTAP
   provou RLS depois de detectar o grant ausente;
-- rota Web foi normalizada para `/Veredra/`.
+- rota Web foi normalizada para `/veredra/`.
 
 Bloqueios externos restantes:
 
-- nenhum projeto Supabase/SMTP/Google de producao foi fornecido;
+- SMTP e conta exclusiva de teste ainda precisam de comprovacao hospedada;
 - APK release ainda nao tem keystore de producao;
 - deploy live depende de merge/aprovacao e acesso Cloudflare.
 
@@ -23,7 +23,8 @@ Bloqueios externos restantes:
 
 Implementados:
 
-- auth, recovery, Google OAuth, sessao segura e exclusao de conta;
+- auth por e-mail/senha, recovery, sessao segura e exclusao de conta;
+- Google OAuth preservado, isolado e desativado por feature flag;
 - sync offline-first com consentimento, retry, conflito e tombstones;
 - RLS/Storage privado e testes de usuario cruzado;
 - limites/sanitizacao de importacao e diagnosticos redigidos;
@@ -32,7 +33,7 @@ Implementados:
 
 Pendentes para beta publica:
 
-- validar e-mail, Google e sync real entre duas sessoes no staging hospedado;
+- validar e-mail e sync real entre duas sessoes no staging hospedado;
 - assinar APK e registrar protocolo do instalador Windows;
 - executar checklist manual completo de formatos/backup em Android e desktop;
 - publicar politica legal de privacidade e canal de suporte.

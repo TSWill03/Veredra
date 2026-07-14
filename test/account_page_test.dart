@@ -74,4 +74,31 @@ void main() {
     expect(gateway.resetCalls, 1);
     expect(find.text('Recuperacao enviada.'), findsOneWidget);
   });
+
+  testWidgets('keeps Google sign-in hidden while the feature is disabled',
+      (WidgetTester tester) async {
+    final FakeAuthGateway gateway = FakeAuthGateway();
+    final AccountController controller = AccountController(gateway);
+    addTearDown(controller.dispose);
+    addTearDown(gateway.close);
+    await tester.pumpWidget(
+      MaterialApp(home: AccountPage(accountController: controller)),
+    );
+
+    expect(find.byKey(const Key('google-sign-in-button')), findsNothing);
+    expect(find.text('Entrar com Google'), findsNothing);
+  });
+
+  testWidgets('retains Google sign-in behind an explicit feature flag',
+      (WidgetTester tester) async {
+    final FakeAuthGateway gateway = FakeAuthGateway(googleAuthEnabled: true);
+    final AccountController controller = AccountController(gateway);
+    addTearDown(controller.dispose);
+    addTearDown(gateway.close);
+    await tester.pumpWidget(
+      MaterialApp(home: AccountPage(accountController: controller)),
+    );
+
+    expect(find.byKey(const Key('google-sign-in-button')), findsOneWidget);
+  });
 }
