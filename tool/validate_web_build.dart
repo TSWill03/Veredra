@@ -37,7 +37,9 @@ void main(List<String> args) {
     final String workerSource = worker.readAsStringSync();
     for (final String marker in <String>[
       'function resourceKeyFromUrl(url)',
+      'function normalizeNavigationResponse(response)',
       'function respondWithCachedIndex(event)',
+      'response.redirected',
       "event.request.mode === 'navigate'",
       "cache.match('index.html')",
     ]) {

@@ -35,6 +35,11 @@ createServer(async (request, response) => {
     response.end('Not found');
     return;
   }
+  if (url.pathname === '/veredra/index.html') {
+    response.writeHead(301, { location: '/veredra/' });
+    response.end();
+    return;
+  }
   let relative = decodeURIComponent(url.pathname.slice('/veredra/'.length));
   if (!relative || relative.endsWith('/')) relative += 'index.html';
   let target = normalize(join(root, relative));

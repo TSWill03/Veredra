@@ -21,9 +21,12 @@ dart run tool/patch_flutter_service_worker.dart
 dart run tool/validate_web_build.dart
 ```
 
-O patch corrige chaves e URLs do service worker gerado para subpasta. O
-validador falha se base, manifest, icones ou marcadores do patch estiverem
-incorretos. Nao edite o service worker gerado manualmente.
+O patch corrige chaves e URLs do service worker gerado para subpasta. Tambem
+reconstroi respostas cacheadas que vieram do redirect automatico
+`index.html -> /veredra/`: o Chrome rejeita uma resposta ainda marcada como
+redirecionada ao reutiliza-la em uma navegacao offline. O validador falha se
+base, manifest, icones ou marcadores do patch estiverem incorretos. Nao edite o
+service worker gerado manualmente.
 
 ## Teste local real
 
@@ -33,10 +36,10 @@ npm ci
 npm test
 ```
 
-`server.mjs` redireciona `/Veredra` para `/veredra/`, serve assets com MIME e
-headers corretos e aplica fallback SPA apenas sob o escopo. O Playwright valida
-desktop e viewport mobile, incluindo reload offline apos o service worker ficar
-pronto.
+`server.mjs` redireciona `/Veredra` para `/veredra/`, reproduz o redirect de
+`/veredra/index.html` observado no Cloudflare, serve assets com MIME e headers
+corretos e aplica fallback SPA apenas sob o escopo. O Playwright valida desktop
+e viewport mobile, incluindo reload offline apos o service worker ficar pronto.
 
 ## Persistencia
 

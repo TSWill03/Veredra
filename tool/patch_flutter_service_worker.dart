@@ -89,6 +89,75 @@ self.addEventListener('message', (event) => {''',
     );
   }
 
+  const String legacyNavigationFallback =
+      '''function respondWithCachedIndex(event) {
+  return event.respondWith(
+    fetch(event.request).catch((error) => {
+      return caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((response) => {
+          if (response != null) {
+            return response;
+          }
+          return cache.match('index.html').then((fallbackResponse) => {
+            if (fallbackResponse != null) {
+              return fallbackResponse;
+            }
+            throw error;
+          });
+        });
+      });
+    })
+  );
+}
+''';
+  const String redirectSafeNavigationFallback =
+      '''async function normalizeNavigationResponse(response) {
+  if (response == null || !response.redirected) {
+    return response;
+  }
+  var headers = new Headers(response.headers);
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  headers.delete('transfer-encoding');
+  return new Response(await response.blob(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headers,
+  });
+}
+
+function respondWithCachedIndex(event) {
+  return event.respondWith(
+    fetch(event.request).catch((error) => {
+      return caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((response) => {
+          if (response != null) {
+            return normalizeNavigationResponse(response);
+          }
+          return cache.match('index.html').then((fallbackResponse) => {
+            if (fallbackResponse != null) {
+              return normalizeNavigationResponse(fallbackResponse);
+            }
+            throw error;
+          });
+        });
+      });
+    })
+  );
+}
+''';
+  if (!source.contains('function normalizeNavigationResponse(response)')) {
+    if (!source.contains(legacyNavigationFallback)) {
+      stderr.writeln('Could not harden cached navigation responses.');
+      exitCode = 1;
+      return;
+    }
+    source = source.replaceFirst(
+      legacyNavigationFallback,
+      redirectSafeNavigationFallback,
+    );
+  }
+
   if (!source.contains("event.request.mode === 'navigate'")) {
     final RegExp getMethodCheck = RegExp(
       "  if \\(event\\.request\\.method !== 'GET'\\) \\{\\r?\\n"
