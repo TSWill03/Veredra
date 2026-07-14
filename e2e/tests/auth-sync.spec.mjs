@@ -10,7 +10,7 @@ test.describe('configured Supabase authentication and sync', () => {
   test('login, metadata sync and recovery request', async ({ browser }) => {
     const firstContext = await browser.newContext();
     const first = await firstContext.newPage();
-    await first.goto('http://127.0.0.1:4173/Veredra/');
+    await first.goto('http://127.0.0.1:4173/veredra/');
     await enableFlutterSemantics(first);
     await signIn(first, email, password);
 
@@ -21,7 +21,7 @@ test.describe('configured Supabase authentication and sync', () => {
 
     const secondContext = await browser.newContext();
     const second = await secondContext.newPage();
-    await second.goto('http://127.0.0.1:4173/Veredra/');
+    await second.goto('http://127.0.0.1:4173/veredra/');
     await enableFlutterSemantics(second);
     await signIn(second, email, password);
     await expect(second.getByText('E-mail verificado')).toBeVisible();

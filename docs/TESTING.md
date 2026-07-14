@@ -10,7 +10,7 @@ flutter analyze
 flutter test --coverage
 dart run tool/check_repository_security.dart
 dart run tool/validate_migrations.dart
-flutter build web --release --base-href /Veredra/
+flutter build web --release --base-href /veredra/
 dart run tool/patch_flutter_service_worker.dart
 dart run tool/validate_web_build.dart
 flutter build apk --debug
@@ -38,9 +38,10 @@ npx playwright install chromium
 npm test
 ```
 
-O servidor E2E hospeda exclusivamente em `/Veredra/` e testa Chromium desktop e
-viewport mobile: carga, importacao TXT Unicode, abertura, retorno a biblioteca,
-reload com IndexedDB, shell offline e redirect sem barra.
+O servidor E2E hospeda exclusivamente em `/veredra/` e testa Chromium desktop e
+viewport mobile: carga, importacao TXT/Markdown/HTML/EPUB, sanitizacao HTML,
+abertura e leitura, retorno a biblioteca, persistencia de livro e marcador no
+IndexedDB, shell offline e redirect da rota legada.
 
 Auth/sync hospedado e condicional:
 

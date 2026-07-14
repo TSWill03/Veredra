@@ -988,7 +988,7 @@ class BookService {
     final dynamic parsedDocument = html_parser.parse(html);
     final List<String> candidates = <String>[
       parsedDocument.querySelector('h1, h2, h3')?.text?.trim() ?? '',
-      parsedDocument.title?.trim() ?? '',
+      parsedDocument.querySelector('title')?.text?.trim() ?? '',
       p.basenameWithoutExtension(href),
     ];
 

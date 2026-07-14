@@ -18,17 +18,24 @@ const mime = new Map([
 
 createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-  if (url.pathname === '/Veredra') {
-    response.writeHead(301, { location: '/Veredra/' });
+  if (url.pathname === '/veredra') {
+    response.writeHead(301, { location: '/veredra/' });
     response.end();
     return;
   }
-  if (!url.pathname.startsWith('/Veredra/')) {
+  if (url.pathname === '/Veredra' || url.pathname.startsWith('/Veredra/')) {
+    response.writeHead(301, {
+      location: `/veredra${url.pathname.slice('/Veredra'.length) || '/'}`,
+    });
+    response.end();
+    return;
+  }
+  if (!url.pathname.startsWith('/veredra/')) {
     response.writeHead(404);
     response.end('Not found');
     return;
   }
-  let relative = decodeURIComponent(url.pathname.slice('/Veredra/'.length));
+  let relative = decodeURIComponent(url.pathname.slice('/veredra/'.length));
   if (!relative || relative.endsWith('/')) relative += 'index.html';
   let target = normalize(join(root, relative));
   if (!target.startsWith(root)) {

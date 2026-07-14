@@ -46,8 +46,8 @@ jobs:
       - name: Validate migration contract
         run: dart run tool/validate_migrations.dart
 
-      - name: Build Web at case-sensitive subpath
-        run: flutter build web --release --base-href /Veredra/
+      - name: Build Web at canonical subpath
+        run: flutter build web --release --base-href /veredra/
 
       - name: Patch and validate PWA service worker
         run: |
@@ -117,13 +117,13 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/package-lock.json
       - run: flutter pub get
-      - run: flutter build web --release --base-href /Veredra/
+      - run: flutter build web --release --base-href /veredra/
       - run: dart run tool/patch_flutter_service_worker.dart
       - run: npm ci
         working-directory: e2e
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
-      - run: npm run test:pwa
+      - run: npm test
         working-directory: e2e
       - uses: actions/upload-artifact@v4
         if: failure()
