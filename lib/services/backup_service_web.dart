@@ -179,11 +179,12 @@ class BackupService {
                 )
               : null;
       if (previousLastBook != null) {
-        final LibraryEntry? match = importedEntries.cast<LibraryEntry?>().firstWhere(
-              (LibraryEntry? entry) =>
-                  _sameBookReference(entry?.reference, previousLastBook),
-              orElse: () => null,
-            );
+        final LibraryEntry? match =
+            importedEntries.cast<LibraryEntry?>().firstWhere(
+                  (LibraryEntry? entry) =>
+                      _sameBookReference(entry?.reference, previousLastBook),
+                  orElse: () => null,
+                );
         if (match != null) {
           progressState['lastBookReference'] = match.reference.toJson();
         }
