@@ -241,8 +241,11 @@ class SyncCoordinator extends ChangeNotifier {
       return _resolvedBookAssetSynchronizer;
     }
     final RemoteSyncGateway? remote = remoteGateway;
+    if (remote is! BookAssetRemoteGateway) {
+      return null;
+    }
     final LocalSyncDataSource local = localRepository;
-    if (remote is! BookAssetRemoteGateway || local is! LocalSyncRepository) {
+    if (local is! LocalSyncRepository) {
       return null;
     }
     final BookService bookService = BookService()..configureProfile(profileId);
