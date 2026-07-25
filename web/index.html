@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -20,6 +20,14 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Veredra - leitor de webnovels e ebooks com biblioteca local e leitura offline.">
   <meta name="theme-color" content="#8C6B43">
+  <meta name="build-commit" content="__BUILD_COMMIT__">
+  <link rel="canonical" href="https://wicolly.com.br/veredra/">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Veredra | Leitor de webnovels e ebooks">
+  <meta property="og:description" content="Biblioteca local e leitura offline no navegador.">
+  <meta property="og:url" content="https://wicolly.com.br/veredra/">
+  <meta name="twitter:card" content="summary">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -32,8 +40,30 @@
 
   <title>Veredra</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    .site-return {
+      position: fixed;
+      top: max(12px, env(safe-area-inset-top));
+      left: max(12px, env(safe-area-inset-left));
+      z-index: 9999;
+      display: inline-flex;
+      min-height: 42px;
+      align-items: center;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 255, 255, .28);
+      border-radius: 999px;
+      background: rgba(25, 20, 16, .86);
+      color: #fff;
+      font: 700 14px/1 system-ui, sans-serif;
+      text-decoration: none;
+      backdrop-filter: blur(10px);
+    }
+    .site-return:focus-visible { outline: 3px solid #ffd28a; outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+  </style>
 </head>
 <body>
+  <a class="site-return" href="/" aria-label="Voltar ao site principal">← Site Wícolly</a>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
