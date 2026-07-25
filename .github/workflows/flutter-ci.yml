@@ -66,7 +66,20 @@ jobs:
           dart format --output=none --set-exit-if-changed "${dart_files[@]}"
 
       - name: Analyze
-        run: flutter analyze
+        id: analyze
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build/ci
+          flutter analyze 2>&1 | tee build/ci/flutter-analyze.log
+
+      - name: Upload analyze diagnostics
+        if: failure() && steps.analyze.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: veredra-flutter-analyze
+          path: build/ci/flutter-analyze.log
+          if-no-files-found: error
 
       - name: Test with coverage
         run: flutter test --coverage

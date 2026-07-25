@@ -79,7 +79,22 @@ class SyncPreferencesService {
     final SyncPreferences current = await load();
     final SyncPreferences next = current.copyWith(
       enabled: enabled,
-      syncBookFiles: false,
+      syncBookFiles: enabled ? current.syncBookFiles : false,
+      consentAt: enabled ? DateTime.now().toUtc() : current.consentAt,
+    );
+    await save(next);
+    return next;
+  }
+
+  Future<SyncPreferences> setBookFiles(bool enabled) async {
+    final SyncPreferences current = await load();
+    if (enabled && !current.enabled) {
+      throw StateError(
+        'Ative primeiro a sincronizacao dos dados de leitura.',
+      );
+    }
+    final SyncPreferences next = current.copyWith(
+      syncBookFiles: enabled,
       consentAt: enabled ? DateTime.now().toUtc() : current.consentAt,
     );
     await save(next);
@@ -87,12 +102,6 @@ class SyncPreferencesService {
   }
 
   Future<void> save(SyncPreferences preferences) {
-    if (preferences.syncBookFiles) {
-      throw StateError(
-        'A sincronizacao de arquivos ainda nao esta habilitada. '
-        'Somente dados de leitura podem ser sincronizados.',
-      );
-    }
     return _storage.writeString(_key, jsonEncode(preferences.toJson()));
   }
 

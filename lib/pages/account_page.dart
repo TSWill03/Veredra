@@ -328,28 +328,36 @@ class _AccountPageState extends State<AccountPage> {
 
   Widget _buildSignedIn(AccountController account) {
     final SyncCoordinator? sync = widget.syncCoordinator;
-    final AuthUser user = account.user!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
-          title: Text(user.email),
+          title: Text(account.user!.email),
           subtitle: Text(
-            user.emailVerified ? 'E-mail verificado' : 'Confirmacao pendente',
+            account.user!.emailVerified
+                ? 'E-mail verificado'
+                : 'Confirmacao pendente',
           ),
           trailing: Icon(
-            user.emailVerified
+            account.user!.emailVerified
                 ? Icons.verified_user_rounded
                 : Icons.mark_email_unread_outlined,
           ),
         ),
-        if (!user.emailVerified)
+        if (!account.user!.emailVerified)
           const _MessageCard(
             icon: Icons.outgoing_mail,
             message:
                 'Confirme seu e-mail. A leitura local permanece disponivel.',
+          ),
+        if (sync?.errorMessage != null)
+          _MessageCard(
+            key: const Key('sync-error-message'),
+            icon: Icons.sync_problem_rounded,
+            message: sync!.errorMessage!,
+            error: true,
           ),
         const SizedBox(height: 20),
         Text('Sincronizacao', style: Theme.of(context).textTheme.titleLarge),
@@ -375,6 +383,21 @@ class _AccountPageState extends State<AccountPage> {
                 subtitle: const Text(
                   'Metadados, preferencias, progresso, marcadores, anotacoes, '
                   'destaques e estatisticas. Exige consentimento.',
+                ),
+              ),
+              SwitchListTile(
+                key: const Key('sync-book-files-switch'),
+                value: sync?.preferences.syncBookFiles ?? false,
+                onChanged: sync == null ||
+                        !sync.preferences.enabled ||
+                        account.busy ||
+                        sync.phase == SyncPhase.synchronizing
+                    ? null
+                    : (bool value) => _confirmBookFileSync(sync, value),
+                title: const Text('Sincronizar livros e traducoes'),
+                subtitle: const Text(
+                  'Envia capitulos textuais em pacotes ZIP privados, verificados '
+                  'por SHA-256. PDF e capas continuam locais nesta etapa.',
                 ),
               ),
               SwitchListTile(
@@ -409,23 +432,36 @@ class _AccountPageState extends State<AccountPage> {
         const SizedBox(height: 16),
         Text('Armazenamento', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Card(
+        Card(
           child: Column(
             children: <Widget>[
-              ListTile(
+              const ListTile(
                 leading: Icon(Icons.data_usage_rounded),
-                title: Text('Somente dados de leitura'),
-                subtitle:
-                    Text('Politica atual. Arquivos e capas ficam locais.'),
+                title: Text('Dados de leitura'),
+                subtitle: Text(
+                  'Metadados e progresso usam sincronizacao leve e isolada por '
+                  'usuario.',
+                ),
                 trailing: Icon(Icons.check_circle_rounded),
               ),
               ListTile(
-                enabled: false,
-                leading: Icon(Icons.cloud_upload_outlined),
-                title: Text('Sincronizacao completa'),
+                leading: Icon(
+                  sync?.preferences.syncBookFiles ?? false
+                      ? Icons.cloud_done_rounded
+                      : Icons.cloud_upload_outlined,
+                ),
+                title: const Text('Capitulos e traducoes'),
                 subtitle: Text(
-                  'Bloqueada ate o upload criptograficamente verificado e os '
-                  'limites de quota serem habilitados.',
+                  sync?.preferences.syncBookFiles ?? false
+                      ? 'Sincronizacao privada ativada. Livros baixados ficam '
+                          'disponiveis offline neste dispositivo.'
+                      : 'Desativada. Os arquivos permanecem somente neste '
+                          'dispositivo.',
+                ),
+                trailing: Icon(
+                  sync?.preferences.syncBookFiles ?? false
+                      ? Icons.check_circle_rounded
+                      : Icons.lock_outline_rounded,
                 ),
               ),
             ],
@@ -444,13 +480,16 @@ class _AccountPageState extends State<AccountPage> {
         ),
         const SizedBox(height: 16),
         Text('Privacidade', style: Theme.of(context).textTheme.titleLarge),
-        const Card(
+        Card(
           child: ListTile(
-            leading: Icon(Icons.shield_outlined),
-            title: Text('Leitura continua mesmo sem backend'),
+            leading: const Icon(Icons.shield_outlined),
+            title: const Text('Biblioteca local continua offline-first'),
             subtitle: Text(
-              'Erros de conta ou sincronizacao nunca bloqueiam a biblioteca '
-              'local. Conteudo de livros nao e enviado no modo atual.',
+              sync?.preferences.syncBookFiles ?? false
+                  ? 'Capitulos autorizados sao enviados ao bucket privado do '
+                      'seu usuario. Falhas remotas nao apagam a copia local.'
+                  : 'Conteudo de livros nao e enviado enquanto a sincronizacao '
+                      'de arquivos permanecer desativada.',
             ),
           ),
         ),
@@ -469,6 +508,44 @@ class _AccountPageState extends State<AccountPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _confirmBookFileSync(
+    SyncCoordinator sync,
+    bool enabled,
+  ) async {
+    if (!enabled) {
+      await sync.setBookFiles(false);
+      return;
+    }
+
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+            title: const Text('Sincronizar capitulos e traducoes?'),
+            content: const Text(
+              'O Veredra enviara livros textuais e traducoes para um bucket '
+              'privado, no caminho isolado da sua conta. Cada pacote e '
+              'verificado por SHA-256 e pode ter ate 100 MB. PDF e capas ainda '
+              'nao serao enviados. Voce pode desativar esta opcao depois.',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                key: const Key('confirm-book-files-sync-button'),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Ativar sincronizacao completa'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (confirmed) {
+      await sync.setBookFiles(true);
+    }
   }
 
   Future<void> _submit(AccountController account) async {

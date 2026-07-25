@@ -3,8 +3,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../book_service.dart';
 import '../diagnostics_service.dart';
 import '../storage/app_storage.dart';
+import 'book_asset_gateway.dart';
+import 'book_asset_sync_service.dart';
 import 'device_identity_service.dart';
 import 'local_sync_repository.dart';
 import 'network_monitor.dart';
@@ -23,6 +26,7 @@ class SyncCoordinator extends ChangeNotifier {
     required this.deviceIdentityService,
     required this.networkMonitor,
     required this.remoteGateway,
+    this.bookAssetSynchronizer,
     AppStorage? storage,
     DiagnosticsService? diagnostics,
   })  : _storage = storage ?? createAppStorage(),
@@ -36,8 +40,10 @@ class SyncCoordinator extends ChangeNotifier {
   final DeviceIdentityService deviceIdentityService;
   final NetworkMonitor networkMonitor;
   final RemoteSyncGateway? remoteGateway;
+  final BookAssetSynchronizer? bookAssetSynchronizer;
   final AppStorage _storage;
   final DiagnosticsService _diagnostics;
+  BookAssetSynchronizer? _resolvedBookAssetSynchronizer;
 
   SyncPhase phase = SyncPhase.localOnly;
   SyncPreferences preferences = const SyncPreferences.defaults();
@@ -89,6 +95,15 @@ class SyncCoordinator extends ChangeNotifier {
     await preferencesService.save(preferences);
     _scheduleAutomaticSync();
     notifyListeners();
+  }
+
+  Future<void> setBookFiles(bool enabled) async {
+    preferences = await preferencesService.setBookFiles(enabled);
+    errorMessage = null;
+    notifyListeners();
+    if (enabled) {
+      await syncNow(stageSnapshot: true);
+    }
   }
 
   Future<void> syncNow({bool stageSnapshot = true}) {
@@ -171,6 +186,18 @@ class SyncCoordinator extends ChangeNotifier {
         final List<RemoteSyncRecord> records =
             await remoteGateway!.pullSince(userId: userId, since: lastSyncAt);
         await localRepository.applyRemoteRecords(records);
+
+        if (preferences.syncBookFiles) {
+          final BookAssetSynchronizer? synchronizer =
+              _resolveBookAssetSynchronizer();
+          if (synchronizer == null) {
+            throw const SyncRemoteException(
+              'A sincronizacao de arquivos nao esta configurada neste build.',
+            );
+          }
+          await synchronizer.syncAll(userId: userId);
+        }
+
         lastSyncAt = DateTime.now().toUtc();
         await _storage.writeString(
           _lastSyncKey,
@@ -204,6 +231,30 @@ class SyncCoordinator extends ChangeNotifier {
           : SyncPhase.synchronized;
     }
     notifyListeners();
+  }
+
+  BookAssetSynchronizer? _resolveBookAssetSynchronizer() {
+    if (bookAssetSynchronizer != null) {
+      return bookAssetSynchronizer;
+    }
+    if (_resolvedBookAssetSynchronizer != null) {
+      return _resolvedBookAssetSynchronizer;
+    }
+    final RemoteSyncGateway? remote = remoteGateway;
+    if (remote is! BookAssetRemoteGateway) {
+      return null;
+    }
+    final LocalSyncDataSource local = localRepository;
+    if (local is! LocalSyncRepository) {
+      return null;
+    }
+    final BookService bookService = BookService()..configureProfile(profileId);
+    return _resolvedBookAssetSynchronizer = BookAssetSyncService(
+      profileId: profileId,
+      libraryService: local.libraryService,
+      bookService: bookService,
+      remoteGateway: remote,
+    );
   }
 
   void _scheduleAutomaticSync() {
