@@ -37,19 +37,24 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            base="$PR_BASE_SHA"
+            comparison="origin/$BASE_REF...HEAD"
+          elif [ -n "${BEFORE_SHA:-}" ] &&
+               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            comparison="$BEFORE_SHA...HEAD"
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
-            base="HEAD^"
+            comparison="HEAD^...HEAD"
           else
-            base="HEAD"
+            echo "No previous revision available for formatting comparison."
+            exit 0
           fi
 
           mapfile -t dart_files < <(
-            git diff --name-only --diff-filter=ACMR "$base" HEAD -- '*.dart'
+            git diff --name-only --diff-filter=ACMR "$comparison" -- '*.dart'
           )
           if [ "${#dart_files[@]}" -eq 0 ]; then
             echo "No changed Dart files to format."
