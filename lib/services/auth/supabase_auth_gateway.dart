@@ -39,6 +39,11 @@ class SupabaseAuthGateway implements AuthGateway {
     required String email,
     required String password,
   }) async {
+    if (!AppConfig.publicSignupEnabled) {
+      throw StateError(
+        'Novos cadastros estao desativados. Solicite acesso ao administrador.',
+      );
+    }
     try {
       final AuthResponse response = await _client.auth.signUp(
         email: email.trim(),
