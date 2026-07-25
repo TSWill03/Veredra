@@ -2,6 +2,7 @@
 import '../book_service.dart';
 import '../library_service.dart';
 import '../storage/app_storage.dart';
+import '../translation_recovery_service.dart';
 import 'book_asset_gateway.dart';
 import 'book_asset_package.dart';
 import 'synced_book_storage.dart';
@@ -18,8 +19,14 @@ class BookAssetSyncService implements BookAssetSynchronizer {
     required this.remoteGateway,
     AppStorage? storage,
     SyncedBookStorage? syncedBookStorage,
+    TranslationRecoveryService? translationRecoveryService,
   })  : _storage = storage ?? createAppStorage(),
-        _syncedBookStorage = syncedBookStorage ?? SyncedBookStorage() {
+        _syncedBookStorage = syncedBookStorage ?? SyncedBookStorage(),
+        _translationRecoveryService = translationRecoveryService ??
+            TranslationRecoveryService(
+              bookService: bookService,
+              libraryService: libraryService,
+            ) {
     _syncedBookStorage.configureProfile(profileId);
   }
 
@@ -29,9 +36,11 @@ class BookAssetSyncService implements BookAssetSynchronizer {
   final BookAssetRemoteGateway remoteGateway;
   final AppStorage _storage;
   final SyncedBookStorage _syncedBookStorage;
+  final TranslationRecoveryService _translationRecoveryService;
 
   @override
   Future<void> syncAll({required String userId}) async {
+    await _translationRecoveryService.recover(profileId);
     final entries = await libraryService.loadEntries();
 
     for (final entry in entries) {
