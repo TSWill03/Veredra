@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../diagnostics_service.dart';
 import '../storage/app_storage.dart';
+import 'book_asset_sync_service.dart';
 import 'device_identity_service.dart';
 import 'local_sync_repository.dart';
 import 'network_monitor.dart';
@@ -23,6 +24,7 @@ class SyncCoordinator extends ChangeNotifier {
     required this.deviceIdentityService,
     required this.networkMonitor,
     required this.remoteGateway,
+    this.bookAssetSynchronizer,
     AppStorage? storage,
     DiagnosticsService? diagnostics,
   })  : _storage = storage ?? createAppStorage(),
@@ -36,6 +38,7 @@ class SyncCoordinator extends ChangeNotifier {
   final DeviceIdentityService deviceIdentityService;
   final NetworkMonitor networkMonitor;
   final RemoteSyncGateway? remoteGateway;
+  final BookAssetSynchronizer? bookAssetSynchronizer;
   final AppStorage _storage;
   final DiagnosticsService _diagnostics;
 
@@ -89,6 +92,15 @@ class SyncCoordinator extends ChangeNotifier {
     await preferencesService.save(preferences);
     _scheduleAutomaticSync();
     notifyListeners();
+  }
+
+  Future<void> setBookFiles(bool enabled) async {
+    preferences = await preferencesService.setBookFiles(enabled);
+    errorMessage = null;
+    notifyListeners();
+    if (enabled) {
+      await syncNow(stageSnapshot: true);
+    }
   }
 
   Future<void> syncNow({bool stageSnapshot = true}) {
@@ -171,6 +183,17 @@ class SyncCoordinator extends ChangeNotifier {
         final List<RemoteSyncRecord> records =
             await remoteGateway!.pullSince(userId: userId, since: lastSyncAt);
         await localRepository.applyRemoteRecords(records);
+
+        if (preferences.syncBookFiles) {
+          final BookAssetSynchronizer? synchronizer = bookAssetSynchronizer;
+          if (synchronizer == null) {
+            throw const SyncRemoteException(
+              'A sincronizacao de arquivos nao esta configurada neste build.',
+            );
+          }
+          await synchronizer.syncAll(userId: userId);
+        }
+
         lastSyncAt = DateTime.now().toUtc();
         await _storage.writeString(
           _lastSyncKey,
