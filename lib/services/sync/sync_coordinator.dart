@@ -3,8 +3,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../book_service.dart';
 import '../diagnostics_service.dart';
 import '../storage/app_storage.dart';
+import 'book_asset_gateway.dart';
 import 'book_asset_sync_service.dart';
 import 'device_identity_service.dart';
 import 'local_sync_repository.dart';
@@ -41,6 +43,7 @@ class SyncCoordinator extends ChangeNotifier {
   final BookAssetSynchronizer? bookAssetSynchronizer;
   final AppStorage _storage;
   final DiagnosticsService _diagnostics;
+  BookAssetSynchronizer? _resolvedBookAssetSynchronizer;
 
   SyncPhase phase = SyncPhase.localOnly;
   SyncPreferences preferences = const SyncPreferences.defaults();
@@ -185,7 +188,8 @@ class SyncCoordinator extends ChangeNotifier {
         await localRepository.applyRemoteRecords(records);
 
         if (preferences.syncBookFiles) {
-          final BookAssetSynchronizer? synchronizer = bookAssetSynchronizer;
+          final BookAssetSynchronizer? synchronizer =
+              _resolveBookAssetSynchronizer();
           if (synchronizer == null) {
             throw const SyncRemoteException(
               'A sincronizacao de arquivos nao esta configurada neste build.',
@@ -227,6 +231,27 @@ class SyncCoordinator extends ChangeNotifier {
           : SyncPhase.synchronized;
     }
     notifyListeners();
+  }
+
+  BookAssetSynchronizer? _resolveBookAssetSynchronizer() {
+    if (bookAssetSynchronizer != null) {
+      return bookAssetSynchronizer;
+    }
+    if (_resolvedBookAssetSynchronizer != null) {
+      return _resolvedBookAssetSynchronizer;
+    }
+    final RemoteSyncGateway? remote = remoteGateway;
+    final LocalSyncDataSource local = localRepository;
+    if (remote is! BookAssetRemoteGateway || local is! LocalSyncRepository) {
+      return null;
+    }
+    final BookService bookService = BookService()..configureProfile(profileId);
+    return _resolvedBookAssetSynchronizer = BookAssetSyncService(
+      profileId: profileId,
+      libraryService: local.libraryService,
+      bookService: bookService,
+      remoteGateway: remote,
+    );
   }
 
   void _scheduleAutomaticSync() {
