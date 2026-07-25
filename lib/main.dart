@@ -62,52 +62,55 @@ Future<void> main() async {
     return true;
   };
 
-  await runZonedGuarded<Future<void>>(() async {
-    AuthGateway authGateway = const LocalOnlyAuthGateway();
-    RemoteSyncGateway? remoteSyncGateway;
-    if (AppConfig.isSupabaseConfigured) {
-      try {
-        await Supabase.initialize(
-          url: AppConfig.supabaseUrl,
-          publishableKey: AppConfig.effectiveSupabaseKey,
-          authOptions: FlutterAuthClientOptions(
-            authFlowType: AuthFlowType.pkce,
-            autoRefreshToken: true,
-            detectSessionInUri: true,
-            localStorage: SecureAuthLocalStorage(),
-            pkceAsyncStorage: SecurePkceStorage(),
-          ),
-          debug: false,
-        );
-        final SupabaseClient client = Supabase.instance.client;
-        authGateway = SupabaseAuthGateway(client);
-        remoteSyncGateway = SupabaseSyncGateway(client);
-      } catch (error, stackTrace) {
-        await diagnostics.record(
-          DiagnosticCategory.authentication,
+  await runZonedGuarded<Future<void>>(
+    () async {
+      AuthGateway authGateway = const LocalOnlyAuthGateway();
+      RemoteSyncGateway? remoteSyncGateway;
+      if (AppConfig.isSupabaseConfigured) {
+        try {
+          await Supabase.initialize(
+            url: AppConfig.supabaseUrl,
+            publishableKey: AppConfig.effectiveSupabaseKey,
+            authOptions: FlutterAuthClientOptions(
+              authFlowType: AuthFlowType.pkce,
+              autoRefreshToken: true,
+              detectSessionInUri: true,
+              localStorage: SecureAuthLocalStorage(),
+              pkceAsyncStorage: SecurePkceStorage(),
+            ),
+            debug: false,
+          );
+          final SupabaseClient client = Supabase.instance.client;
+          authGateway = SupabaseAuthGateway(client);
+          remoteSyncGateway = SupabaseSyncGateway(client);
+        } catch (error, stackTrace) {
+          await diagnostics.record(
+            DiagnosticCategory.authentication,
+            error,
+            stackTrace,
+          );
+        }
+      }
+
+      runApp(
+        VeredraApp(
+          accountController: AccountController(authGateway),
+          remoteSyncGateway: remoteSyncGateway,
+          diagnostics: diagnostics,
+        ),
+      );
+    },
+    (Object error, StackTrace stackTrace) {
+      unawaited(
+        diagnostics.record(
+          DiagnosticCategory.startup,
           error,
           stackTrace,
-        );
-      }
-    }
-
-    runApp(
-      VeredraApp(
-        accountController: AccountController(authGateway),
-        remoteSyncGateway: remoteSyncGateway,
-        diagnostics: diagnostics,
-      ),
-    );
-  }, (Object error, StackTrace stackTrace) {
-    unawaited(
-      diagnostics.record(
-        DiagnosticCategory.startup,
-        error,
-        stackTrace,
-        fatal: true,
-      ),
-    );
-  });
+          fatal: true,
+        ),
+      );
+    },
+  );
 }
 
 class VeredraApp extends StatefulWidget {
@@ -164,7 +167,8 @@ class _VeredraAppState extends State<VeredraApp> {
   void initState() {
     super.initState();
     _ownsAccountController = widget.accountController == null;
-    _accountController = widget.accountController ??
+    _accountController =
+        widget.accountController ??
         AccountController(const LocalOnlyAuthGateway());
     _diagnostics = widget.diagnostics ?? DiagnosticsService();
     _accountController.addListener(_handleAccountChanged);
@@ -172,16 +176,16 @@ class _VeredraAppState extends State<VeredraApp> {
   }
 
   Future<void> _loadAppState() async {
-    final AppProfile currentProfile =
-        await _profileService.loadCurrentProfile();
+    final AppProfile currentProfile = await _profileService
+        .loadCurrentProfile();
     _configureServicesForProfile(currentProfile.id);
     await _configureSyncForProfile(currentProfile.id);
     final ThemeMode savedThemeMode = await _progressService.loadThemeMode();
     final double savedFontSize = await _progressService.loadFontSize();
-    final ReaderFontPreset savedReaderFontPreset =
-        await _progressService.loadReaderFontPreset();
-    final BookReference? lastBookReference =
-        await _progressService.loadLastBookReference();
+    final ReaderFontPreset savedReaderFontPreset = await _progressService
+        .loadReaderFontPreset();
+    final BookReference? lastBookReference = await _progressService
+        .loadLastBookReference();
 
     if (!mounted) {
       return;
@@ -293,10 +297,10 @@ class _VeredraAppState extends State<VeredraApp> {
     await _configureSyncForProfile(profile.id);
     final ThemeMode savedThemeMode = await _progressService.loadThemeMode();
     final double savedFontSize = await _progressService.loadFontSize();
-    final ReaderFontPreset savedReaderFontPreset =
-        await _progressService.loadReaderFontPreset();
-    final BookReference? lastBookReference =
-        await _progressService.loadLastBookReference();
+    final ReaderFontPreset savedReaderFontPreset = await _progressService
+        .loadReaderFontPreset();
+    final BookReference? lastBookReference = await _progressService
+        .loadLastBookReference();
 
     if (!mounted) {
       return;
@@ -332,8 +336,9 @@ class _VeredraAppState extends State<VeredraApp> {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor:
-          isDark ? const Color(0xFF101315) : const Color(0xFFF4EFE7),
+      scaffoldBackgroundColor: isDark
+          ? const Color(0xFF101315)
+          : const Color(0xFFF4EFE7),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
@@ -345,18 +350,14 @@ class _VeredraAppState extends State<VeredraApp> {
         backgroundColor: colorScheme.inverseSurface,
         contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
       ),
-      textTheme: ThemeData(
-        brightness: brightness,
-      ).textTheme.apply(
-            bodyColor: colorScheme.onSurface,
-            displayColor: colorScheme.onSurface,
-          ),
+      textTheme: ThemeData(brightness: brightness).textTheme.apply(
+        bodyColor: colorScheme.onSurface,
+        displayColor: colorScheme.onSurface,
+      ),
       cardTheme: CardThemeData(
         color: colorScheme.surfaceContainer,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     );
   }
@@ -428,10 +429,7 @@ class _StartupPage extends StatelessWidget {
           children: <Widget>[
             const CircularProgressIndicator(),
             const SizedBox(height: 18),
-            Text(
-              'Veredra',
-              style: theme.textTheme.titleLarge,
-            ),
+            Text('Veredra', style: theme.textTheme.titleLarge),
           ],
         ),
       ),

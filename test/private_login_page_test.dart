@@ -7,8 +7,9 @@ import 'package:txt_webnovel_reader/services/auth/account_controller.dart';
 import 'support/fake_auth_gateway.dart';
 
 void main() {
-  testWidgets('private entry exposes login without public registration',
-      (WidgetTester tester) async {
+  testWidgets('private entry exposes login without public registration', (
+    WidgetTester tester,
+  ) async {
     final FakeAuthGateway gateway = FakeAuthGateway();
     final AccountController controller = AccountController(gateway);
     addTearDown(controller.dispose);
@@ -25,8 +26,9 @@ void main() {
     expect(find.byKey(const Key('auth-submit-button')), findsNothing);
   });
 
-  testWidgets('validates and submits an authorized login',
-      (WidgetTester tester) async {
+  testWidgets('validates and submits an authorized login', (
+    WidgetTester tester,
+  ) async {
     final FakeAuthGateway gateway = FakeAuthGateway();
     final AccountController controller = AccountController(gateway);
     addTearDown(controller.dispose);
@@ -55,8 +57,9 @@ void main() {
     expect(controller.isSignedIn, isTrue);
   });
 
-  testWidgets('password reset validates and uses the informed email',
-      (WidgetTester tester) async {
+  testWidgets('password reset validates and uses the informed email', (
+    WidgetTester tester,
+  ) async {
     final FakeAuthGateway gateway = FakeAuthGateway();
     final AccountController controller = AccountController(gateway);
     addTearDown(controller.dispose);

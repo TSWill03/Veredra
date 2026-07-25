@@ -5,10 +5,7 @@ import '../services/auth/account_controller.dart';
 import '../services/auth/auth_models.dart';
 
 class PrivateLoginPage extends StatefulWidget {
-  const PrivateLoginPage({
-    super.key,
-    required this.accountController,
-  });
+  const PrivateLoginPage({super.key, required this.accountController});
 
   final AccountController accountController;
 
@@ -83,10 +80,7 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
             ),
             const SizedBox(height: 24),
             if (account.errorMessage != null) ...<Widget>[
-              _MessageCard(
-                message: account.errorMessage!,
-                error: true,
-              ),
+              _MessageCard(message: account.errorMessage!, error: true),
               const SizedBox(height: 14),
             ],
             if (account.noticeMessage != null) ...<Widget>[
@@ -122,8 +116,7 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
                 prefixIcon: const Icon(Icons.password_rounded),
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
-                  tooltip:
-                      _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
+                  tooltip: _obscurePassword ? 'Mostrar senha' : 'Ocultar senha',
                   onPressed: () {
                     setState(() {
                       _obscurePassword = !_obscurePassword;
@@ -153,8 +146,9 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
             ),
             TextButton(
               key: const Key('private-auth-forgot-password-button'),
-              onPressed:
-                  account.busy ? null : () => _sendPasswordReset(account),
+              onPressed: account.busy
+                  ? null
+                  : () => _sendPasswordReset(account),
               child: const Text('Esqueci minha senha'),
             ),
             const SizedBox(height: 10),
@@ -189,10 +183,7 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
           ),
           const SizedBox(height: 24),
           if (account.errorMessage != null) ...<Widget>[
-            _MessageCard(
-              message: account.errorMessage!,
-              error: true,
-            ),
+            _MessageCard(message: account.errorMessage!, error: true),
             const SizedBox(height: 14),
           ],
           TextFormField(
@@ -215,8 +206,7 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
           const SizedBox(height: 18),
           FilledButton.icon(
             key: const Key('private-recovery-submit-button'),
-            onPressed:
-                account.busy ? null : () => _submitNewPassword(account),
+            onPressed: account.busy ? null : () => _submitNewPassword(account),
             icon: account.busy
                 ? const SizedBox.square(
                     dimension: 18,
@@ -234,16 +224,17 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
     if (!(_loginFormKey.currentState?.validate() ?? false)) {
       return;
     }
-    account.signIn(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
+    account.signIn(_emailController.text.trim(), _passwordController.text);
   }
 
   void _sendPasswordReset(AccountController account) {
-    final String? error = AuthInputValidator.email(_emailController.text.trim());
+    final String? error = AuthInputValidator.email(
+      _emailController.text.trim(),
+    );
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     account.sendPasswordReset(_emailController.text.trim());
@@ -258,10 +249,7 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
 }
 
 class _MessageCard extends StatelessWidget {
-  const _MessageCard({
-    required this.message,
-    this.error = false,
-  });
+  const _MessageCard({required this.message, this.error = false});
 
   final String message;
   final bool error;
@@ -280,7 +268,9 @@ class _MessageCard extends StatelessWidget {
         children: <Widget>[
           Icon(
             error ? Icons.error_outline_rounded : Icons.info_outline_rounded,
-            color: error ? colors.onErrorContainer : colors.onSecondaryContainer,
+            color: error
+                ? colors.onErrorContainer
+                : colors.onSecondaryContainer,
           ),
           const SizedBox(width: 10),
           Expanded(
