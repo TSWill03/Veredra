@@ -1,0 +1,45 @@
+name: Temporary Dart formatter
+
+on:
+  push:
+    branches:
+      - codex/veredra-bulk-import
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/veredra-bulk-import
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.9
+          channel: stable
+          cache: true
+      - name: Format phase files
+        run: |
+          dart format \
+            lib/services/book_service.dart \
+            lib/services/book_service_web_bulk.dart \
+            lib/services/import/text_archive_parser.dart \
+            test/text_archive_parser_test.dart
+      - name: Commit formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            lib/services/book_service.dart \
+            lib/services/book_service_web_bulk.dart \
+            lib/services/import/text_archive_parser.dart \
+            test/text_archive_parser_test.dart
+          git commit -m "style: format bulk import files"
+          git push origin HEAD:codex/veredra-bulk-import
