@@ -1,0 +1,55 @@
+name: Temporary Dart formatter
+
+on:
+  push:
+    branches:
+      - codex/veredra-private-library-rollout
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/veredra-private-library-rollout
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.9
+          channel: stable
+          cache: true
+
+      - name: Format only phase files
+        run: |
+          dart format \
+            lib/config/app_config.dart \
+            lib/main.dart \
+            lib/pages/private_login_page.dart \
+            lib/services/auth/supabase_auth_gateway.dart \
+            test/private_login_page_test.dart
+
+      - name: Commit formatting when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No formatting changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            lib/config/app_config.dart \
+            lib/main.dart \
+            lib/pages/private_login_page.dart \
+            lib/services/auth/supabase_auth_gateway.dart \
+            test/private_login_page_test.dart
+          git commit -m "style: format private access files"
+          git push origin HEAD:codex/veredra-private-library-rollout
