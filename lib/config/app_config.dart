@@ -27,6 +27,20 @@ class AppConfig {
     defaultValue: false,
   );
 
+  /// When enabled, production must not silently fall back to an anonymous
+  /// local-only library when authentication is unavailable.
+  static const bool privateAccessRequired = bool.fromEnvironment(
+    'PRIVATE_ACCESS_REQUIRED',
+    defaultValue: false,
+  );
+
+  /// Public self-service registration is disabled by default. Accounts for a
+  /// private deployment must be provisioned explicitly by the administrator.
+  static const bool publicSignupEnabled = bool.fromEnvironment(
+    'PUBLIC_SIGNUP_ENABLED',
+    defaultValue: false,
+  );
+
   static String get effectiveSupabaseKey => supabasePublishableKey.isNotEmpty
       ? supabasePublishableKey
       : legacySupabaseAnonKey;
