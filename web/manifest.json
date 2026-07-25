@@ -1,0 +1,37 @@
+{
+    "name": "Veredra",
+    "short_name": "Veredra",
+    "id": "/veredra/",
+    "start_url": "/veredra/",
+    "scope": "/veredra/",
+    "display": "standalone",
+    "background_color": "#101315",
+    "theme_color": "#8C6B43",
+    "description": "Leitor PWA de webnovels e ebooks com biblioteca local e leitura offline apos importar livros.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

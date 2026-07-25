@@ -1,11 +1,9 @@
 // Signature: dev.tswicolly03
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/book_format.dart';
@@ -15,6 +13,7 @@ import '../models/reader_font_preset.dart';
 import '../models/reader_preferences.dart';
 import '../models/reader_text_align_preset.dart';
 import '../models/reading_progress.dart';
+import 'storage/app_storage.dart';
 
 /// O app salva configuracoes e progresso em um arquivo por perfil.
 /// Isso facilita backup, exportacao e troca de usuario local sem misturar dados.
@@ -26,6 +25,7 @@ class ProgressService {
   static const String _legacyLastBookPathKey = 'app.lastBookPath';
 
   final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
+  final AppStorage _storage = createAppStorage();
 
   String _activeProfileId = 'principal';
   Future<void> _pendingOperation = Future<void>.value();
@@ -187,14 +187,13 @@ class ProgressService {
   }
 
   Future<_ProgressState> _loadStateUnsafe() async {
-    final File file = await _stateFile();
-    if (!await file.exists()) {
+    final String? raw = await _storage.readString(_stateKey);
+    if (raw == null) {
       final _ProgressState migrated = await _migrateLegacyStateIfAvailable();
       await _saveStateUnsafe(migrated);
       return migrated;
     }
 
-    final String raw = await file.readAsString();
     if (raw.trim().isEmpty) {
       final _ProgressState defaults = _ProgressState.defaults();
       await _saveStateUnsafe(defaults);
@@ -211,25 +210,19 @@ class ProgressService {
       return state;
     }
 
-    return _recoverStateFromCorruption(file, raw);
+    return _recoverStateFromCorruption(raw);
   }
 
-  Future<_ProgressState> _recoverStateFromCorruption(
-    File file,
-    String raw,
-  ) async {
+  Future<_ProgressState> _recoverStateFromCorruption(String raw) async {
     final _ProgressState recovered = await _migrateLegacyStateIfAvailable();
     final String timestamp = DateTime.now()
         .toIso8601String()
         .replaceAll(':', '-')
         .replaceAll('.', '-');
-    final File backupFile = File(
-      p.join(
-        file.parent.path,
-        'progress_state.corrupt.$timestamp.json',
-      ),
+    await _storage.writeString(
+      'profiles/$_activeProfileId/state/progress_state.corrupt.$timestamp.json',
+      raw,
     );
-    await backupFile.writeAsString(raw, flush: true);
     await _saveStateUnsafe(recovered);
     return recovered;
   }
@@ -264,11 +257,9 @@ class ProgressService {
   }
 
   Future<void> _saveStateUnsafe(_ProgressState state) async {
-    final File file = await _stateFile();
-    await file.parent.create(recursive: true);
-    await file.writeAsString(
+    await _storage.writeString(
+      _stateKey,
       jsonEncode(state.toJson()),
-      flush: true,
     );
   }
 
@@ -327,19 +318,8 @@ class ProgressService {
     );
   }
 
-  Future<File> _stateFile() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
-    return File(
-      p.join(
-        documentsDirectory.path,
-        'profiles',
-        _activeProfileId,
-        'state',
-        'progress_state.json',
-      ),
-    );
-  }
+  String get _stateKey =>
+      'profiles/$_activeProfileId/state/progress_state.json';
 
   String _encodeBookId(String bookId) => Uri.encodeComponent(bookId);
 }

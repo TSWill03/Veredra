@@ -32,6 +32,23 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/e2e/node_modules/
+/e2e/playwright-report/
+/e2e/test-results/
+/.playwright-cli/
+/output/
+.env
+.env.*
+!.env.example
+/android/app/google-services.json
+/ios/Runner/GoogleService-Info.plist
+/macos/Runner/GoogleService-Info.plist
+client_secret*.json
+/supabase/.temp/
+/supabase/.branches/
+/android/key.properties
+*.jks
+*.keystore
 
 # Symbolication related
 app.*.symbols

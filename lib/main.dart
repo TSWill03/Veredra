@@ -1,6 +1,11 @@
 // Signature: dev.tswicolly03
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:ui';
 
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'config/app_config.dart';
 import 'models/app_profile.dart';
 import 'models/book_reference.dart';
 import 'models/reader_font_preset.dart';
@@ -15,14 +20,106 @@ import 'services/profile_service.dart';
 import 'services/progress_service.dart';
 import 'services/reading_stats_service.dart';
 import 'services/translation_service.dart';
+import 'services/auth/account_controller.dart';
+import 'services/auth/auth_gateway.dart';
+import 'services/auth/secure_auth_storage.dart';
+import 'services/auth/supabase_auth_gateway.dart';
+import 'services/diagnostics_service.dart';
+import 'services/sync/device_identity_service.dart';
+import 'services/sync/local_sync_repository.dart';
+import 'services/sync/network_monitor.dart';
+import 'services/sync/remote_sync_gateway.dart';
+import 'services/sync/supabase_sync_gateway.dart';
+import 'services/sync/sync_coordinator.dart';
+import 'services/sync/sync_preferences_service.dart';
+import 'services/sync/sync_queue.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const VeredraApp());
+  final DiagnosticsService diagnostics = DiagnosticsService();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    unawaited(
+      diagnostics.record(
+        DiagnosticCategory.startup,
+        details.exception,
+        details.stack ?? StackTrace.current,
+        fatal: true,
+      ),
+    );
+  };
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stackTrace) {
+    unawaited(
+      diagnostics.record(
+        DiagnosticCategory.startup,
+        error,
+        stackTrace,
+        fatal: true,
+      ),
+    );
+    return true;
+  };
+
+  await runZonedGuarded<Future<void>>(() async {
+    AuthGateway authGateway = const LocalOnlyAuthGateway();
+    RemoteSyncGateway? remoteSyncGateway;
+    if (AppConfig.isSupabaseConfigured) {
+      try {
+        await Supabase.initialize(
+          url: AppConfig.supabaseUrl,
+          publishableKey: AppConfig.effectiveSupabaseKey,
+          authOptions: FlutterAuthClientOptions(
+            authFlowType: AuthFlowType.pkce,
+            autoRefreshToken: true,
+            detectSessionInUri: true,
+            localStorage: SecureAuthLocalStorage(),
+            pkceAsyncStorage: SecurePkceStorage(),
+          ),
+          debug: false,
+        );
+        final SupabaseClient client = Supabase.instance.client;
+        authGateway = SupabaseAuthGateway(client);
+        remoteSyncGateway = SupabaseSyncGateway(client);
+      } catch (error, stackTrace) {
+        await diagnostics.record(
+          DiagnosticCategory.authentication,
+          error,
+          stackTrace,
+        );
+      }
+    }
+
+    runApp(
+      VeredraApp(
+        accountController: AccountController(authGateway),
+        remoteSyncGateway: remoteSyncGateway,
+        diagnostics: diagnostics,
+      ),
+    );
+  }, (Object error, StackTrace stackTrace) {
+    unawaited(
+      diagnostics.record(
+        DiagnosticCategory.startup,
+        error,
+        stackTrace,
+        fatal: true,
+      ),
+    );
+  });
 }
 
 class VeredraApp extends StatefulWidget {
-  const VeredraApp({super.key});
+  const VeredraApp({
+    super.key,
+    this.accountController,
+    this.remoteSyncGateway,
+    this.diagnostics,
+  });
+
+  final AccountController? accountController;
+  final RemoteSyncGateway? remoteSyncGateway;
+  final DiagnosticsService? diagnostics;
 
   @override
   State<VeredraApp> createState() => _VeredraAppState();
@@ -42,6 +139,10 @@ class _VeredraAppState extends State<VeredraApp> {
   final AnnotationService _annotationService = AnnotationService();
   final ReadingStatsService _readingStatsService = ReadingStatsService();
   final TranslationService _translationService = TranslationService();
+  late final AccountController _accountController;
+  late final bool _ownsAccountController;
+  late final DiagnosticsService _diagnostics;
+  SyncCoordinator? _syncCoordinator;
   late final BackupService _backupService = BackupService(
     profileService: _profileService,
     libraryService: _libraryService,
@@ -61,6 +162,11 @@ class _VeredraAppState extends State<VeredraApp> {
   @override
   void initState() {
     super.initState();
+    _ownsAccountController = widget.accountController == null;
+    _accountController = widget.accountController ??
+        AccountController(const LocalOnlyAuthGateway());
+    _diagnostics = widget.diagnostics ?? DiagnosticsService();
+    _accountController.addListener(_handleAccountChanged);
     _loadAppState();
   }
 
@@ -68,6 +174,7 @@ class _VeredraAppState extends State<VeredraApp> {
     final AppProfile currentProfile =
         await _profileService.loadCurrentProfile();
     _configureServicesForProfile(currentProfile.id);
+    await _configureSyncForProfile(currentProfile.id);
     final ThemeMode savedThemeMode = await _progressService.loadThemeMode();
     final double savedFontSize = await _progressService.loadFontSize();
     final ReaderFontPreset savedReaderFontPreset =
@@ -97,6 +204,42 @@ class _VeredraAppState extends State<VeredraApp> {
     _annotationService.configureProfile(profileId);
     _readingStatsService.configureProfile(profileId);
     _translationService.configureProfile(profileId);
+  }
+
+  Future<void> _configureSyncForProfile(String profileId) async {
+    _syncCoordinator?.dispose();
+    final LocalSyncRepository localRepository = LocalSyncRepository(
+      profileId: profileId,
+      profileService: _profileService,
+      libraryService: _libraryService,
+      progressService: _progressService,
+      bookmarkService: _bookmarkService,
+      annotationService: _annotationService,
+      readingStatsService: _readingStatsService,
+    );
+    final SyncCoordinator coordinator = SyncCoordinator(
+      profileId: profileId,
+      currentUserId: () => _accountController.user?.id,
+      localRepository: localRepository,
+      queue: SyncQueue(profileId: profileId),
+      preferencesService: SyncPreferencesService(profileId: profileId),
+      deviceIdentityService: DeviceIdentityService(),
+      networkMonitor: ConnectivityNetworkMonitor(),
+      remoteGateway: widget.remoteSyncGateway,
+      diagnostics: _diagnostics,
+    );
+    await coordinator.initialize();
+    _syncCoordinator = coordinator;
+  }
+
+  void _handleAccountChanged() {
+    final SyncCoordinator? coordinator = _syncCoordinator;
+    if (_accountController.user != null &&
+        coordinator != null &&
+        coordinator.preferences.enabled &&
+        coordinator.preferences.automatic) {
+      unawaited(coordinator.syncNow());
+    }
   }
 
   Future<void> _handleThemeModeChanged(ThemeMode themeMode) async {
@@ -143,6 +286,7 @@ class _VeredraAppState extends State<VeredraApp> {
 
   Future<void> _handleProfileChanged(AppProfile profile) async {
     _configureServicesForProfile(profile.id);
+    await _configureSyncForProfile(profile.id);
     final ThemeMode savedThemeMode = await _progressService.loadThemeMode();
     final double savedFontSize = await _progressService.loadFontSize();
     final ReaderFontPreset savedReaderFontPreset =
@@ -161,6 +305,16 @@ class _VeredraAppState extends State<VeredraApp> {
       _readerFontPreset = savedReaderFontPreset;
       _lastBookReference = lastBookReference;
     });
+  }
+
+  @override
+  void dispose() {
+    _accountController.removeListener(_handleAccountChanged);
+    if (_ownsAccountController) {
+      _accountController.dispose();
+    }
+    _syncCoordinator?.dispose();
+    super.dispose();
   }
 
   ThemeData _buildTheme(Brightness brightness) {
@@ -224,6 +378,8 @@ class _VeredraAppState extends State<VeredraApp> {
               progressService: _progressService,
               readingStatsService: _readingStatsService,
               translationService: _translationService,
+              accountController: _accountController,
+              syncCoordinator: _syncCoordinator,
               lastBookReference: _lastBookReference,
               fontSize: _fontSize,
               readerFontPreset: _readerFontPreset,

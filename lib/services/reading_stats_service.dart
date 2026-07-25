@@ -1,13 +1,11 @@
 // Signature: dev.tswicolly03
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../models/book_reading_stats.dart';
+import 'storage/app_storage.dart';
 
 class ReadingStatsService {
+  final AppStorage _storage = createAppStorage();
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -103,12 +101,10 @@ class ReadingStatsService {
   }
 
   Future<Map<String, dynamic>> _loadJson() async {
-    final File file = await _statsFile();
-    if (!await file.exists()) {
+    final String? raw = await _storage.readString(_statsKey);
+    if (raw == null) {
       return <String, dynamic>{};
     }
-
-    final String raw = await file.readAsString();
     if (raw.trim().isEmpty) {
       return <String, dynamic>{};
     }
@@ -121,30 +117,17 @@ class ReadingStatsService {
   }
 
   Future<void> _saveJson(Map<String, BookReadingStats> stats) async {
-    final File file = await _statsFile();
-    await file.parent.create(recursive: true);
-    await file.writeAsString(
+    await _storage.writeString(
+      _statsKey,
       jsonEncode(
         <String, dynamic>{
           for (final MapEntry<String, BookReadingStats> entry in stats.entries)
             entry.key: entry.value.toJson(),
         },
       ),
-      flush: true,
     );
   }
 
-  Future<File> _statsFile() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
-    return File(
-      p.join(
-        documentsDirectory.path,
-        'profiles',
-        _activeProfileId,
-        'reader',
-        'reading_stats.json',
-      ),
-    );
-  }
+  String get _statsKey =>
+      'profiles/$_activeProfileId/reader/reading_stats.json';
 }

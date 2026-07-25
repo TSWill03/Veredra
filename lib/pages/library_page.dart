@@ -1,6 +1,5 @@
 // Signature: dev.tswicolly03
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,12 +23,16 @@ import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/reading_stats_service.dart';
 import '../services/translation_service.dart';
+import '../services/auth/account_controller.dart';
+import '../services/sync/sync_coordinator.dart';
 import '../widgets/app_watermark_overlay.dart';
 import '../widgets/book_translation_dialog.dart';
+import '../widgets/platform_cover_image.dart';
+import '../widgets/translation_progress_dialog.dart';
 import 'about_page.dart';
+import 'account_page.dart';
 import 'global_search_page.dart';
 import 'notes_overview_page.dart';
-import '../widgets/translation_progress_dialog.dart';
 import 'reading_stats_page.dart';
 import 'pdf_reader_page.dart';
 import 'reader_page.dart';
@@ -52,6 +55,8 @@ class LibraryPage extends StatefulWidget {
     required this.progressService,
     required this.readingStatsService,
     required this.translationService,
+    required this.accountController,
+    required this.syncCoordinator,
     required this.lastBookReference,
     required this.fontSize,
     required this.readerFontPreset,
@@ -73,6 +78,8 @@ class LibraryPage extends StatefulWidget {
   final ProgressService progressService;
   final ReadingStatsService readingStatsService;
   final TranslationService translationService;
+  final AccountController accountController;
+  final SyncCoordinator? syncCoordinator;
   final BookReference? lastBookReference;
   final double fontSize;
   final ReaderFontPreset readerFontPreset;
@@ -161,17 +168,8 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    bool exists = false;
-    if (reference.usesDirectory) {
-      exists = await Directory(reference.directoryPath!).exists();
-    } else {
-      for (final String path in reference.assetPaths) {
-        if (await File(path).exists()) {
-          exists = true;
-          break;
-        }
-      }
-    }
+    final bool exists =
+        await widget.bookService.isBookReferenceAvailable(reference);
 
     if (!mounted) {
       return;
@@ -705,6 +703,20 @@ class _LibraryPageState extends State<LibraryPage> {
         );
       },
     );
+  }
+
+  Future<void> _openAccountPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => AccountPage(
+          accountController: widget.accountController,
+          syncCoordinator: widget.syncCoordinator,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _refreshLibrary();
+    }
   }
 
   Future<void> _switchProfile(AppProfile profile) async {
@@ -1264,6 +1276,16 @@ class _LibraryPageState extends State<LibraryPage> {
                 centerTitle: false,
                 actions: <Widget>[
                   IconButton(
+                    key: const Key('account-sync-button'),
+                    tooltip: 'Conta e sincronizacao',
+                    onPressed: _openAccountPage,
+                    icon: Icon(
+                      widget.accountController.isSignedIn
+                          ? Icons.cloud_done_rounded
+                          : Icons.cloud_off_rounded,
+                    ),
+                  ),
+                  IconButton(
                     tooltip: 'Perfil e backup',
                     onPressed: _showProfileSheet,
                     icon: const Icon(Icons.manage_accounts_rounded),
@@ -1709,9 +1731,7 @@ class _BookCoverThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final String? coverPath = reference.coverPath;
-    final bool hasCover = coverPath != null &&
-        coverPath.isNotEmpty &&
-        File(coverPath).existsSync();
+    final bool hasCover = coverPath != null && coverPath.isNotEmpty;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -1727,8 +1747,8 @@ class _BookCoverThumbnail extends StatelessWidget {
                     reference.coverAlignmentX,
                     reference.coverAlignmentY,
                   ),
-                  child: Image.file(
-                    File(coverPath),
+                  child: PlatformCoverImage(
+                    coverPath: coverPath,
                     width: width,
                     height: height,
                     fit: BoxFit.cover,
@@ -1736,7 +1756,7 @@ class _BookCoverThumbnail extends StatelessWidget {
                       reference.coverAlignmentX,
                       reference.coverAlignmentY,
                     ),
-                    errorBuilder: (_, __, ___) => _buildPlaceholder(theme),
+                    placeholderBuilder: (_) => _buildPlaceholder(theme),
                   ),
                 ),
               )
