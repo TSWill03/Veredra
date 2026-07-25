@@ -1,16 +1,23 @@
 // Signature: dev.tswicolly03
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import 'book_asset_gateway.dart';
+import 'book_asset_package.dart';
 import 'remote_sync_gateway.dart';
 import 'sync_models.dart';
 
-class SupabaseSyncGateway implements RemoteSyncGateway {
+class SupabaseSyncGateway
+    implements RemoteSyncGateway, BookAssetRemoteGateway {
   SupabaseSyncGateway(this._client, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+      : _uuid = uuid ?? const Uuid(),
+        _bookAssets = SupabaseBookAssetGateway(_client, uuid: uuid);
 
   final SupabaseClient _client;
   final Uuid _uuid;
+  final SupabaseBookAssetGateway _bookAssets;
 
   static const Map<SyncEntityType, String> _tables = <SyncEntityType, String>{
     SyncEntityType.profile: 'profiles',
@@ -161,6 +168,27 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
     } catch (_) {
       throw const SyncRemoteException('Falha de rede ao receber alteracoes.');
     }
+  }
+
+  @override
+  Future<void> upload({
+    required String userId,
+    required BookAssetPackage package,
+  }) {
+    return _bookAssets.upload(userId: userId, package: package);
+  }
+
+  @override
+  Future<List<RemoteBookAsset>> list({required String userId}) {
+    return _bookAssets.list(userId: userId);
+  }
+
+  @override
+  Future<Uint8List> download({
+    required String userId,
+    required RemoteBookAsset asset,
+  }) {
+    return _bookAssets.download(userId: userId, asset: asset);
   }
 
   Map<String, dynamic> _typedColumns(
