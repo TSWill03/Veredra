@@ -3,11 +3,16 @@
 
 ## Politica
 
-O usuario pode usar o app sem conta. Criar conta nao envia dados automaticamente.
-A opcao `Sincronizar dados de leitura` exige consentimento explicito por perfil.
-`Sincronizacao completa` permanece indisponivel nesta versao.
+O usuario pode usar o app sem conta em builds locais. Criar conta nao envia dados
+automaticamente. `Sincronizar dados de leitura` exige consentimento explicito por
+perfil. O envio dos capitulos usa uma segunda autorizacao independente chamada
+`Sincronizar livros e traducoes`.
 
-## Entidades iniciais
+Desativar a sincronizacao principal tambem desativa a transferencia de arquivos.
+Desativar apenas os arquivos mantem metadados e progresso sincronizados, sem enviar
+conteudo novo.
+
+## Entidades leves
 
 - perfil e preferencias;
 - metadados/favorito do livro, sem caminho local ou conteudo;
@@ -15,7 +20,7 @@ A opcao `Sincronizar dados de leitura` exige consentimento explicito por perfil.
 - marcadores, anotacoes e destaques;
 - estatisticas de leitura.
 
-## Fluxo
+## Fluxo de metadados
 
 1. toda mudanca e salva localmente;
 2. um snapshot produz operacoes UUID na fila duravel do perfil;
@@ -30,6 +35,31 @@ O dispositivo recebe UUID local estavel, sem usar identificador de hardware.
 Sync automatico e opcional e usa intervalo conservador, alem do evento de
 reconexao.
 
+## Pacotes privados de livros
+
+Quando a autorizacao de arquivos esta ativa:
+
+1. o livro textual ou EPUB convertido e reaberto no armazenamento local;
+2. capitulos sao empacotados em um ZIP com `manifest.json`;
+3. o pacote recebe checksum SHA-256;
+4. o upload usa o bucket privado `veredra-books`;
+5. o caminho sempre comeca pelo UUID autenticado do usuario;
+6. `book_assets` registra caminho, tamanho, MIME e checksum;
+7. outro dispositivo baixa, verifica tamanho e SHA-256 e so depois persiste;
+8. Web grava no IndexedDB e plataformas nativas usam staging + rename;
+9. a copia baixada permanece disponivel offline.
+
+Pacotes possuem limite inicial de 100 MB, ate 5.000 capitulos e 16 MB por
+capitulo. Livros inalterados sao deduplicados localmente pelo checksum. PDF e
+capas continuam locais nesta entrega.
+
+## Traducoes
+
+Traducoes produzidas pelo Argos no desktop sao livros textuais normais. Antes de
+uma sincronizacao completa, o desktop tambem procura pastas orfas em
+`translated_books`, reinsere essas traducoes na biblioteca e as envia pelo mesmo
+pipeline privado de pacotes.
+
 ## Conflitos
 
 - anotacoes, marcadores e destaques: merge por ID;
@@ -37,25 +67,35 @@ reconexao.
 - progresso: maior capitulo e, no mesmo capitulo, maior progresso;
 - exclusoes: tombstone `deleted_at`, nunca remocao silenciosa imediata;
 - empates ambiguos: mantem o estado deterministico mais recente e registra
-  diagnostico local sem conteudo do livro.
+  diagnostico local sem conteudo do livro;
+- pacote de livro: o checksum mais recente enviado para o mesmo `local_id`
+  substitui o manifesto remoto, sem apagar a copia local antes da verificacao.
 
 ## Privacidade de arquivos
 
-Metadados sincronizados removem referencias de caminho, capa e asset local.
-Livros/capas nao sao enviados. Para habilitar a modalidade completa no futuro,
-sao obrigatorios: consentimento separado, quota estimada, checksum, deduplicacao,
-retomada de upload, MIME/extensao, limite, caminho `user_id/...`, exclusao
-server-side e teste de interrupcao.
+Metadados continuam removendo referencias de caminho local. Os pacotes sao
+opcionais, ficam em bucket privado e as politicas RLS/Storage exigem o prefixo
+`auth.uid()`. Nenhuma service-role key e usada no cliente. O app nao gera URL
+publica permanente para os livros.
 
 ## Estados de UI
 
 `Sincronizado`, `Sincronizando`, `Offline`, `Alteracoes pendentes`,
 `Erro de sincronizacao` e `Sessao expirada`. Todos sao informativos; nenhum
-substitui ou bloqueia o storage local.
+substitui ou bloqueia o storage local. A tela de conta mostra separadamente o
+consentimento de metadados e o consentimento de capitulos/traducoes.
 
-## Limites
+## Testes obrigatorios
 
-Os testes unitarios cobrem fila, retry, deduplicacao, conflito, offline/reconexao
-e duas sessoes fake. O backend local prova RLS. A sincronizacao entre navegadores
+- fila, retry, deduplicacao, conflito e offline/reconexao;
+- encode/decode de pacote e rejeicao de checksum alterado;
+- RLS entre usuarios diferentes;
+- Storage bloqueando prefixo de outro usuario;
+- upload interrompido e retomada;
+- download para Web e plataforma nativa;
+- livro grande e traducao com milhares de capitulos;
+- copia local intacta em toda falha remota.
+
+O backend local prova migration, lint e RLS. O teste completo entre dispositivos
 com Supabase hospedado depende das credenciais de staging descritas em
 `TESTING.md`.
