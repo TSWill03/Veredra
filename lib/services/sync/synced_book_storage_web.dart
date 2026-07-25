@@ -30,8 +30,7 @@ class SyncedBookStorage {
 
     try {
       for (int index = 0; index < package.chapters.length; index++) {
-        final String fileName =
-            '${(index + 1).toString().padLeft(6, '0')}.txt';
+        final String fileName = '${(index + 1).toString().padLeft(6, '0')}.txt';
         final String key = normalizeStorageKey('$rootKey/$fileName');
         await _storage.writeString(key, package.chapters[index].content);
         paths.add('$_webStoredPrefix$key');

@@ -40,8 +40,7 @@ class SyncedBookStorage {
     try {
       final List<String> stagingPaths = <String>[];
       for (int index = 0; index < package.chapters.length; index++) {
-        final String fileName =
-            '${(index + 1).toString().padLeft(6, '0')}.txt';
+        final String fileName = '${(index + 1).toString().padLeft(6, '0')}.txt';
         final File file = File(p.join(staging.path, fileName));
         await file.writeAsString(package.chapters[index].content, flush: true);
         stagingPaths.add(file.path);

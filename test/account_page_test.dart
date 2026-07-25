@@ -147,8 +147,7 @@ void main() {
       ),
     );
 
-    final Finder switchFinder =
-        find.byKey(const Key('sync-book-files-switch'));
+    final Finder switchFinder = find.byKey(const Key('sync-book-files-switch'));
     expect(switchFinder, findsOneWidget);
     expect(coordinator.preferences.syncBookFiles, isFalse);
 

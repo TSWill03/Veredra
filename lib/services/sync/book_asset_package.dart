@@ -55,7 +55,8 @@ class BookAssetPackageCodec {
     }
 
     final Archive archive = Archive();
-    final List<Map<String, dynamic>> manifestChapters = <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> manifestChapters =
+        <Map<String, dynamic>>[];
     for (int index = 0; index < chapters.length; index++) {
       final GeneratedChapter chapter = chapters[index];
       final List<int> contentBytes = utf8.encode(chapter.content);
