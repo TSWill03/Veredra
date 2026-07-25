@@ -55,10 +55,9 @@ capas continuam locais nesta entrega.
 
 ## Traducoes
 
-Traducoes produzidas pelo Argos no desktop sao livros textuais normais. Antes de
-uma sincronizacao completa, o desktop tambem procura pastas orfas em
-`translated_books`, reinsere essas traducoes na biblioteca e as envia pelo mesmo
-pipeline privado de pacotes.
+Traducoes produzidas pelo Argos e ja registradas na biblioteca sao livros
+textuais normais e usam o mesmo pipeline privado. A varredura de pastas antigas
+ou orfas em `translated_books` pertence a Fase 4 e nao faz parte desta entrega.
 
 ## Conflitos
 
