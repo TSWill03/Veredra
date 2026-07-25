@@ -155,10 +155,7 @@ class BookService extends legacy.BookService {
     return const XTypeGroup(
       label: 'ZIP de capitulos',
       extensions: <String>['zip'],
-      mimeTypes: <String>[
-        'application/zip',
-        'application/x-zip-compressed',
-      ],
+      mimeTypes: <String>['application/zip', 'application/x-zip-compressed'],
     );
   }
 }

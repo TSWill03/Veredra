@@ -131,10 +131,8 @@ class TextArchiveParser {
     candidates.sort(_compareChapters);
     final List<GeneratedChapter> chapters = candidates
         .map(
-          (_ArchiveChapter chapter) => GeneratedChapter(
-            title: chapter.title,
-            content: chapter.content,
-          ),
+          (_ArchiveChapter chapter) =>
+              GeneratedChapter(title: chapter.title, content: chapter.content),
         )
         .toList(growable: false);
 
@@ -169,15 +167,19 @@ class TextArchiveParser {
     final List<String> segments = p.posix.split(path);
     return segments.any(
       (String segment) =>
-          segment.isEmpty ||
-          segment == '__MACOSX' ||
-          segment.startsWith('.'),
+          segment.isEmpty || segment == '__MACOSX' || segment.startsWith('.'),
     );
   }
 
   static bool _isSupportedTextPath(String path) {
-    return const <String>{'.txt', '.md', '.markdown', '.html', '.htm', '.xhtml'}
-        .contains(p.posix.extension(path).toLowerCase());
+    return const <String>{
+      '.txt',
+      '.md',
+      '.markdown',
+      '.html',
+      '.htm',
+      '.xhtml',
+    }.contains(p.posix.extension(path).toLowerCase());
   }
 
   static String _normalizeImportedText(String rawContent, String sourcePath) {
@@ -209,8 +211,9 @@ class TextArchiveParser {
     if (fileTitle.isEmpty) {
       return p.posix.basename(path);
     }
-    final Match? numberedWithSeparator =
-        RegExp(r'^0*(\d+)(\s*[-._]\s*)(.+)$').firstMatch(fileTitle);
+    final Match? numberedWithSeparator = RegExp(
+      r'^0*(\d+)(\s*[-._]\s*)(.+)$',
+    ).firstMatch(fileTitle);
     if (numberedWithSeparator != null) {
       final int number = int.parse(numberedWithSeparator.group(1)!);
       return '$number${numberedWithSeparator.group(2)!}${numberedWithSeparator.group(3)!}';

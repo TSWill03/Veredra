@@ -21,14 +21,16 @@ void main() {
     );
 
     expect(result.title, 'SuperGene');
-    expect(
-      result.chapters.map((chapter) => chapter.title),
-      <String>['1', '2', '10'],
-    );
-    expect(
-      result.chapters.map((chapter) => chapter.content),
-      <String>['Primeiro', 'Segundo', 'Decimo'],
-    );
+    expect(result.chapters.map((chapter) => chapter.title), <String>[
+      '1',
+      '2',
+      '10',
+    ]);
+    expect(result.chapters.map((chapter) => chapter.content), <String>[
+      'Primeiro',
+      'Segundo',
+      'Decimo',
+    ]);
     expect(result.ignoredEntries, 2);
   });
 
