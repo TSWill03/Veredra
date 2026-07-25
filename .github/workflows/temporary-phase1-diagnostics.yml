@@ -1,0 +1,64 @@
+name: Temporary phase 1 diagnostics
+
+on:
+  push:
+    branches:
+      - codex/veredra-private-library-rollout
+
+permissions:
+  contents: write
+
+jobs:
+  diagnostics:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/veredra-private-library-rollout
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.9
+          channel: stable
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: flutter pub get
+      - name: Capture formatting and E2E
+        shell: bash
+        run: |
+          set +e
+          {
+            echo '=== CHANGED DART FILES ==='
+            git diff --name-only --diff-filter=ACMR origin/main...HEAD -- '*.dart'
+            echo
+            echo '=== FORMAT CHECK ==='
+            mapfile -t files < <(
+              git diff --name-only --diff-filter=ACMR origin/main...HEAD -- '*.dart'
+            )
+            dart format --output=none --set-exit-if-changed "${files[@]}"
+            echo "format_exit=$?"
+            echo
+            echo '=== BUILD WEB ==='
+            flutter build web --release --base-href /veredra/
+            dart run tool/patch_flutter_service_worker.dart
+            echo
+            echo '=== PLAYWRIGHT ==='
+            cd e2e
+            npm ci
+            npx playwright install --with-deps chromium
+            npm test
+            echo "playwright_exit=$?"
+          } > phase1-diagnostics.txt 2>&1
+          exit 0
+      - name: Commit diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add phase1-diagnostics.txt
+          git commit -m "chore: capture phase 1 diagnostics"
+          git push origin HEAD:codex/veredra-private-library-rollout
