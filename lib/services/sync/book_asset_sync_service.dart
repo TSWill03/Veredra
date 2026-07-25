@@ -20,13 +20,14 @@ class BookAssetSyncService implements BookAssetSynchronizer {
     AppStorage? storage,
     SyncedBookStorage? syncedBookStorage,
     TranslationRecoveryService? translationRecoveryService,
-  })  : _storage = storage ?? createAppStorage(),
-        _syncedBookStorage = syncedBookStorage ?? SyncedBookStorage(),
-        _translationRecoveryService = translationRecoveryService ??
-            TranslationRecoveryService(
-              bookService: bookService,
-              libraryService: libraryService,
-            ) {
+  }) : _storage = storage ?? createAppStorage(),
+       _syncedBookStorage = syncedBookStorage ?? SyncedBookStorage(),
+       _translationRecoveryService =
+           translationRecoveryService ??
+           TranslationRecoveryService(
+             bookService: bookService,
+             libraryService: libraryService,
+           ) {
     _syncedBookStorage.configureProfile(profileId);
   }
 
@@ -73,7 +74,8 @@ class BookAssetSyncService implements BookAssetSynchronizer {
       final int localIndex = refreshedEntries.indexWhere(
         (entry) => entry.id == asset.bookId,
       );
-      final bool localAvailable = localIndex >= 0 &&
+      final bool localAvailable =
+          localIndex >= 0 &&
           await bookService.isBookReferenceAvailable(
             refreshedEntries[localIndex].reference,
           );
@@ -84,10 +86,7 @@ class BookAssetSyncService implements BookAssetSynchronizer {
         continue;
       }
 
-      final bytes = await remoteGateway.download(
-        userId: userId,
-        asset: asset,
-      );
+      final bytes = await remoteGateway.download(userId: userId, asset: asset);
       final decoded = BookAssetPackageCodec.decode(
         bytes,
         expectedChecksum: asset.checksumSha256,

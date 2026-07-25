@@ -60,8 +60,9 @@ class TranslationRecoveryService {
 
     int recoveredCount = 0;
     int skippedCount = 0;
-    final List<FileSystemEntity> directories =
-        await translationsRoot.list(followLinks: false).toList();
+    final List<FileSystemEntity> directories = await translationsRoot
+        .list(followLinks: false)
+        .toList();
     directories.sort(
       (FileSystemEntity a, FileSystemEntity b) =>
           p.basename(a.path).compareTo(p.basename(b.path)),
@@ -77,13 +78,14 @@ class TranslationRecoveryService {
         continue;
       }
 
-      final List<String> chapterPaths = (await entity
-              .list(followLinks: false)
-              .where((FileSystemEntity item) => item is File)
-              .map((FileSystemEntity item) => item.path)
-              .where(_isSupportedTextPath)
-              .toList())
-        ..sort(_compareChapterPaths);
+      final List<String> chapterPaths =
+          (await entity
+                .list(followLinks: false)
+                .where((FileSystemEntity item) => item is File)
+                .map((FileSystemEntity item) => item.path)
+                .where(_isSupportedTextPath)
+                .toList())
+            ..sort(_compareChapterPaths);
       if (chapterPaths.isEmpty) {
         skippedCount++;
         continue;
@@ -92,8 +94,7 @@ class TranslationRecoveryService {
       final String folderName = p.basename(normalizedDirectory).trim();
       final Book loaded = await bookService.loadTextBookFromFiles(
         chapterPaths,
-        preferredTitle:
-            folderName.isEmpty ? 'Traducao recuperada' : folderName,
+        preferredTitle: folderName.isEmpty ? 'Traducao recuperada' : folderName,
         sourceLabel: 'Traducao recuperada do desktop',
         copyToManagedStorage: false,
         format: BookFormat.text,
@@ -120,8 +121,14 @@ class TranslationRecoveryService {
   }
 
   bool _isSupportedTextPath(String path) {
-    return const <String>{'.txt', '.md', '.markdown', '.html', '.htm', '.xhtml'}
-        .contains(p.extension(path).toLowerCase());
+    return const <String>{
+      '.txt',
+      '.md',
+      '.markdown',
+      '.html',
+      '.htm',
+      '.xhtml',
+    }.contains(p.extension(path).toLowerCase());
   }
 
   int _compareChapterPaths(String a, String b) {
@@ -137,9 +144,7 @@ class TranslationRecoveryService {
     } else if (bNumber != null) {
       return 1;
     }
-    return p.basename(a).toLowerCase().compareTo(
-          p.basename(b).toLowerCase(),
-        );
+    return p.basename(a).toLowerCase().compareTo(p.basename(b).toLowerCase());
   }
 
   int? _extractNumber(String value) {

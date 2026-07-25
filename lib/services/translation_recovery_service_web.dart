@@ -23,9 +23,6 @@ class TranslationRecoveryService {
   final LibraryService libraryService;
 
   Future<TranslationRecoveryResult> recover(String profileId) async {
-    return const TranslationRecoveryResult(
-      recoveredCount: 0,
-      skippedCount: 0,
-    );
+    return const TranslationRecoveryResult(recoveredCount: 0, skippedCount: 0);
   }
 }
