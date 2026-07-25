@@ -51,8 +51,7 @@ class AppConfig {
 
   static bool get isSupabaseConfigured {
     final Uri? uri = Uri.tryParse(supabaseUrl);
-    final bool allowedScheme =
-        uri?.scheme == 'https' ||
+    final bool allowedScheme = uri?.scheme == 'https' ||
         (uri?.scheme == 'http' &&
             (uri?.host == 'localhost' || uri?.host == '127.0.0.1'));
     return allowedScheme &&

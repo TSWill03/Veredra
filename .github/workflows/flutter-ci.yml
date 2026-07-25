@@ -156,6 +156,21 @@ jobs:
         working-directory: e2e
       - run: npm test
         working-directory: e2e
+      - name: Build private Web entry for acceptance test
+        run: >-
+          flutter build web --release --base-href /veredra/
+          --dart-define=PRIVATE_ACCESS_REQUIRED=true
+          --dart-define=PUBLIC_SIGNUP_ENABLED=false
+          --dart-define=ENABLE_GOOGLE_AUTH=false
+          --dart-define=SUPABASE_URL=https://ci-test.supabase.co
+          --dart-define=SUPABASE_PUBLISHABLE_KEY=ci-public-test-key
+          --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/veredra/
+      - name: Patch and validate private PWA build
+        run: |
+          dart run tool/patch_flutter_service_worker.dart
+          dart run tool/validate_web_build.dart
+      - run: npm run test:private
+        working-directory: e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

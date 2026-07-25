@@ -146,9 +146,8 @@ class _PrivateLoginPageState extends State<PrivateLoginPage> {
             ),
             TextButton(
               key: const Key('private-auth-forgot-password-button'),
-              onPressed: account.busy
-                  ? null
-                  : () => _sendPasswordReset(account),
+              onPressed:
+                  account.busy ? null : () => _sendPasswordReset(account),
               child: const Text('Esqueci minha senha'),
             ),
             const SizedBox(height: 10),
@@ -268,9 +267,8 @@ class _MessageCard extends StatelessWidget {
         children: <Widget>[
           Icon(
             error ? Icons.error_outline_rounded : Icons.info_outline_rounded,
-            color: error
-                ? colors.onErrorContainer
-                : colors.onSecondaryContainer,
+            color:
+                error ? colors.onErrorContainer : colors.onSecondaryContainer,
           ),
           const SizedBox(width: 10),
           Expanded(

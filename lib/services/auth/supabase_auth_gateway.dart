@@ -8,7 +8,7 @@ import 'auth_models.dart';
 
 class SupabaseAuthGateway implements AuthGateway {
   SupabaseAuthGateway(this._client, {bool? googleAuthEnabled})
-    : _googleAuthEnabled = googleAuthEnabled ?? AppConfig.googleAuthEnabled;
+      : _googleAuthEnabled = googleAuthEnabled ?? AppConfig.googleAuthEnabled;
 
   final SupabaseClient _client;
   final bool _googleAuthEnabled;
@@ -187,11 +187,11 @@ class SupabaseAuthGateway implements AuthGateway {
       return 'E-mail ou senha incorretos.';
     }
     if (normalized.contains('email not confirmed')) {
-      return 'Confirme seu e-mail antes de entrar.';
+      return 'E-mail ou senha incorretos.';
     }
     if (normalized.contains('already registered') ||
         normalized.contains('already exists')) {
-      return 'Ja existe uma conta com este e-mail.';
+      return 'Nao foi possivel concluir a autenticacao.';
     }
     if (normalized.contains('rate limit') || normalized.contains('too many')) {
       return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';

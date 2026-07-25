@@ -119,11 +119,13 @@ class VeredraApp extends StatefulWidget {
     this.accountController,
     this.remoteSyncGateway,
     this.diagnostics,
+    this.privateAccessRequired = AppConfig.privateAccessRequired,
   });
 
   final AccountController? accountController;
   final RemoteSyncGateway? remoteSyncGateway;
   final DiagnosticsService? diagnostics;
+  final bool privateAccessRequired;
 
   @override
   State<VeredraApp> createState() => _VeredraAppState();
@@ -167,8 +169,7 @@ class _VeredraAppState extends State<VeredraApp> {
   void initState() {
     super.initState();
     _ownsAccountController = widget.accountController == null;
-    _accountController =
-        widget.accountController ??
+    _accountController = widget.accountController ??
         AccountController(const LocalOnlyAuthGateway());
     _diagnostics = widget.diagnostics ?? DiagnosticsService();
     _accountController.addListener(_handleAccountChanged);
@@ -176,16 +177,16 @@ class _VeredraAppState extends State<VeredraApp> {
   }
 
   Future<void> _loadAppState() async {
-    final AppProfile currentProfile = await _profileService
-        .loadCurrentProfile();
+    final AppProfile currentProfile =
+        await _profileService.loadCurrentProfile();
     _configureServicesForProfile(currentProfile.id);
     await _configureSyncForProfile(currentProfile.id);
     final ThemeMode savedThemeMode = await _progressService.loadThemeMode();
     final double savedFontSize = await _progressService.loadFontSize();
-    final ReaderFontPreset savedReaderFontPreset = await _progressService
-        .loadReaderFontPreset();
-    final BookReference? lastBookReference = await _progressService
-        .loadLastBookReference();
+    final ReaderFontPreset savedReaderFontPreset =
+        await _progressService.loadReaderFontPreset();
+    final BookReference? lastBookReference =
+        await _progressService.loadLastBookReference();
 
     if (!mounted) {
       return;
@@ -297,10 +298,10 @@ class _VeredraAppState extends State<VeredraApp> {
     await _configureSyncForProfile(profile.id);
     final ThemeMode savedThemeMode = await _progressService.loadThemeMode();
     final double savedFontSize = await _progressService.loadFontSize();
-    final ReaderFontPreset savedReaderFontPreset = await _progressService
-        .loadReaderFontPreset();
-    final BookReference? lastBookReference = await _progressService
-        .loadLastBookReference();
+    final ReaderFontPreset savedReaderFontPreset =
+        await _progressService.loadReaderFontPreset();
+    final BookReference? lastBookReference =
+        await _progressService.loadLastBookReference();
 
     if (!mounted) {
       return;
@@ -336,9 +337,8 @@ class _VeredraAppState extends State<VeredraApp> {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: isDark
-          ? const Color(0xFF101315)
-          : const Color(0xFFF4EFE7),
+      scaffoldBackgroundColor:
+          isDark ? const Color(0xFF101315) : const Color(0xFFF4EFE7),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
@@ -351,9 +351,9 @@ class _VeredraAppState extends State<VeredraApp> {
         contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
       ),
       textTheme: ThemeData(brightness: brightness).textTheme.apply(
-        bodyColor: colorScheme.onSurface,
-        displayColor: colorScheme.onSurface,
-      ),
+            bodyColor: colorScheme.onSurface,
+            displayColor: colorScheme.onSurface,
+          ),
       cardTheme: CardThemeData(
         color: colorScheme.surfaceContainer,
         elevation: 0,
@@ -367,38 +367,32 @@ class _VeredraAppState extends State<VeredraApp> {
       return const _StartupPage();
     }
 
-    if (AppConfig.privateAccessRequired) {
-      if (!_accountController.isConfigured) {
-        return const _PrivateAccessConfigurationPage();
-      }
-      if (!_accountController.isSignedIn ||
-          _accountController.passwordRecovery) {
-        return PrivateLoginPage(accountController: _accountController);
-      }
-    }
-
-    return LibraryPage(
-      currentProfile: _currentProfile!,
-      profileService: _profileService,
-      backupService: _backupService,
-      bookService: _bookService,
-      annotationService: _annotationService,
-      bookmarkService: _bookmarkService,
-      libraryService: _libraryService,
-      librarySearchService: _librarySearchService,
-      progressService: _progressService,
-      readingStatsService: _readingStatsService,
-      translationService: _translationService,
+    return PrivateAccessGate(
+      privateAccessRequired: widget.privateAccessRequired,
       accountController: _accountController,
-      syncCoordinator: _syncCoordinator,
-      lastBookReference: _lastBookReference,
-      fontSize: _fontSize,
-      readerFontPreset: _readerFontPreset,
-      onThemeModeChanged: _handleThemeModeChanged,
-      onFontSizeChanged: _handleFontSizeChanged,
-      onReaderFontPresetChanged: _handleReaderFontPresetChanged,
-      onProfileChanged: _handleProfileChanged,
-      onLastBookChanged: _handleLastBookChanged,
+      child: LibraryPage(
+        currentProfile: _currentProfile!,
+        profileService: _profileService,
+        backupService: _backupService,
+        bookService: _bookService,
+        annotationService: _annotationService,
+        bookmarkService: _bookmarkService,
+        libraryService: _libraryService,
+        librarySearchService: _librarySearchService,
+        progressService: _progressService,
+        readingStatsService: _readingStatsService,
+        translationService: _translationService,
+        accountController: _accountController,
+        syncCoordinator: _syncCoordinator,
+        lastBookReference: _lastBookReference,
+        fontSize: _fontSize,
+        readerFontPreset: _readerFontPreset,
+        onThemeModeChanged: _handleThemeModeChanged,
+        onFontSizeChanged: _handleFontSizeChanged,
+        onReaderFontPresetChanged: _handleReaderFontPresetChanged,
+        onProfileChanged: _handleProfileChanged,
+        onLastBookChanged: _handleLastBookChanged,
+      ),
     );
   }
 
@@ -411,6 +405,40 @@ class _VeredraAppState extends State<VeredraApp> {
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
       home: _buildHome(),
+    );
+  }
+}
+
+class PrivateAccessGate extends StatelessWidget {
+  const PrivateAccessGate({
+    super.key,
+    required this.privateAccessRequired,
+    required this.accountController,
+    required this.child,
+  });
+
+  final bool privateAccessRequired;
+  final AccountController accountController;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!privateAccessRequired) {
+      return child;
+    }
+
+    return AnimatedBuilder(
+      animation: accountController,
+      builder: (BuildContext context, Widget? _) {
+        if (!accountController.isConfigured) {
+          return const _PrivateAccessConfigurationPage();
+        }
+        if (!accountController.isSignedIn ||
+            accountController.passwordRecovery) {
+          return PrivateLoginPage(accountController: accountController);
+        }
+        return child;
+      },
     );
   }
 }

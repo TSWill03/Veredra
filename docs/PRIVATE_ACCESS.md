@@ -106,6 +106,11 @@ Publique primeiro um preview. Depois valide a produção real.
 - recuperação de senha retorna para `/veredra/`;
 - expiração da sessão não deixa a biblioteca aberta.
 
+O CI também recompila uma variante privada com configuração pública de teste e
+executa `npm run test:private`. Esse teste confirma em Chromium que `/veredra/`
+exibe login e recuperação, sem `Criar conta` ou acesso à importação. Ele não
+substitui o smoke test com a conta real e o Cloudflare Access de produção.
+
 ### Isolamento
 
 - usuário A não lê registros ou objetos do usuário B;
