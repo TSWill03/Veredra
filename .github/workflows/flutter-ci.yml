@@ -38,11 +38,12 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            comparison="origin/$BASE_REF...HEAD"
+            comparison="origin/$BASE_REF...origin/$HEAD_REF"
           elif [ -n "${BEFORE_SHA:-}" ] &&
                [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
             comparison="$BEFORE_SHA...HEAD"
@@ -62,7 +63,7 @@ jobs:
           fi
 
           printf 'Checking %s\n' "${dart_files[@]}"
-          dart format --set-exit-if-changed "${dart_files[@]}"
+          dart format --output=none --set-exit-if-changed "${dart_files[@]}"
 
       - name: Analyze
         run: flutter analyze
