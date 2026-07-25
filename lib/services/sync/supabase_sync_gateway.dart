@@ -10,9 +10,10 @@ import 'remote_sync_gateway.dart';
 import 'sync_models.dart';
 
 class SupabaseSyncGateway implements RemoteSyncGateway, BookAssetRemoteGateway {
-  SupabaseSyncGateway(this._client, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid(),
-        _bookAssets = SupabaseBookAssetGateway(_client, uuid: uuid);
+  SupabaseSyncGateway(SupabaseClient client, {Uuid? uuid})
+      : _client = client,
+        _uuid = uuid ?? const Uuid(),
+        _bookAssets = SupabaseBookAssetGateway(client, uuid: uuid);
 
   final SupabaseClient _client;
   final Uuid _uuid;
