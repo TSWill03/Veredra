@@ -10,6 +10,7 @@ import 'models/app_profile.dart';
 import 'models/book_reference.dart';
 import 'models/reader_font_preset.dart';
 import 'pages/library_page.dart';
+import 'pages/private_login_page.dart';
 import 'services/annotation_service.dart';
 import 'services/backup_service.dart';
 import 'services/bookmark_service.dart';
@@ -240,6 +241,9 @@ class _VeredraAppState extends State<VeredraApp> {
         coordinator.preferences.automatic) {
       unawaited(coordinator.syncNow());
     }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _handleThemeModeChanged(ThemeMode themeMode) async {
@@ -357,6 +361,46 @@ class _VeredraAppState extends State<VeredraApp> {
     );
   }
 
+  Widget _buildHome() {
+    if (!_isReady) {
+      return const _StartupPage();
+    }
+
+    if (AppConfig.privateAccessRequired) {
+      if (!_accountController.isConfigured) {
+        return const _PrivateAccessConfigurationPage();
+      }
+      if (!_accountController.isSignedIn ||
+          _accountController.passwordRecovery) {
+        return PrivateLoginPage(accountController: _accountController);
+      }
+    }
+
+    return LibraryPage(
+      currentProfile: _currentProfile!,
+      profileService: _profileService,
+      backupService: _backupService,
+      bookService: _bookService,
+      annotationService: _annotationService,
+      bookmarkService: _bookmarkService,
+      libraryService: _libraryService,
+      librarySearchService: _librarySearchService,
+      progressService: _progressService,
+      readingStatsService: _readingStatsService,
+      translationService: _translationService,
+      accountController: _accountController,
+      syncCoordinator: _syncCoordinator,
+      lastBookReference: _lastBookReference,
+      fontSize: _fontSize,
+      readerFontPreset: _readerFontPreset,
+      onThemeModeChanged: _handleThemeModeChanged,
+      onFontSizeChanged: _handleFontSizeChanged,
+      onReaderFontPresetChanged: _handleReaderFontPresetChanged,
+      onProfileChanged: _handleProfileChanged,
+      onLastBookChanged: _handleLastBookChanged,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -365,31 +409,7 @@ class _VeredraAppState extends State<VeredraApp> {
       themeMode: _themeMode,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: _isReady
-          ? LibraryPage(
-              currentProfile: _currentProfile!,
-              profileService: _profileService,
-              backupService: _backupService,
-              bookService: _bookService,
-              annotationService: _annotationService,
-              bookmarkService: _bookmarkService,
-              libraryService: _libraryService,
-              librarySearchService: _librarySearchService,
-              progressService: _progressService,
-              readingStatsService: _readingStatsService,
-              translationService: _translationService,
-              accountController: _accountController,
-              syncCoordinator: _syncCoordinator,
-              lastBookReference: _lastBookReference,
-              fontSize: _fontSize,
-              readerFontPreset: _readerFontPreset,
-              onThemeModeChanged: _handleThemeModeChanged,
-              onFontSizeChanged: _handleFontSizeChanged,
-              onReaderFontPresetChanged: _handleReaderFontPresetChanged,
-              onProfileChanged: _handleProfileChanged,
-              onLastBookChanged: _handleLastBookChanged,
-            )
-          : const _StartupPage(),
+      home: _buildHome(),
     );
   }
 }
@@ -413,6 +433,52 @@ class _StartupPage extends StatelessWidget {
               style: theme.textTheme.titleLarge,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivateAccessConfigurationPage extends StatelessWidget {
+  const _PrivateAccessConfigurationPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.admin_panel_settings_outlined,
+                        size: 54,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Acesso privado não configurado',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Este build exige autenticação, mas não recebeu uma configuração válida do Supabase. O modo local anônimo foi bloqueado para proteger a biblioteca.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
