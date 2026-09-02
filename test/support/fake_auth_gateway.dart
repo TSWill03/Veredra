@@ -18,6 +18,7 @@ class FakeAuthGateway implements AuthGateway {
   int signUpCalls = 0;
   int resetCalls = 0;
   int googleCalls = 0;
+  int signOutCalls = 0;
   bool fail = false;
   final StreamController<AuthSessionSnapshot> controller =
       StreamController<AuthSessionSnapshot>.broadcast();
@@ -74,6 +75,8 @@ class FakeAuthGateway implements AuthGateway {
 
   @override
   Future<void> signOut() async {
+    signOutCalls++;
+    await Future<void>.delayed(delay);
     user = null;
     controller.add(
       const AuthSessionSnapshot(event: AuthSessionEvent.signedOut, user: null),

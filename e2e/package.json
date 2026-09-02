@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test",
-    "test:pwa": "playwright test tests/pwa.spec.mjs"
+    "test": "playwright test --grep-invert @private",
+    "test:pwa": "playwright test tests/pwa.spec.mjs",
+    "test:private": "playwright test --grep @private"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

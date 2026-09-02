@@ -7,10 +7,8 @@ import 'auth_gateway.dart';
 import 'auth_models.dart';
 
 class SupabaseAuthGateway implements AuthGateway {
-  SupabaseAuthGateway(
-    this._client, {
-    bool? googleAuthEnabled,
-  }) : _googleAuthEnabled = googleAuthEnabled ?? AppConfig.googleAuthEnabled;
+  SupabaseAuthGateway(this._client, {bool? googleAuthEnabled})
+      : _googleAuthEnabled = googleAuthEnabled ?? AppConfig.googleAuthEnabled;
 
   final SupabaseClient _client;
   final bool _googleAuthEnabled;
@@ -39,6 +37,11 @@ class SupabaseAuthGateway implements AuthGateway {
     required String email,
     required String password,
   }) async {
+    if (!AppConfig.publicSignupEnabled) {
+      throw StateError(
+        'Novos cadastros estao desativados. Solicite acesso ao administrador.',
+      );
+    }
     try {
       final AuthResponse response = await _client.auth.signUp(
         email: email.trim(),
@@ -103,9 +106,7 @@ class SupabaseAuthGateway implements AuthGateway {
   @override
   Future<AuthActionResult> signInWithGoogle() async {
     if (!_googleAuthEnabled) {
-      throw StateError(
-        'A entrada com Google esta desativada nesta entrega.',
-      );
+      throw StateError('A entrada com Google esta desativada nesta entrega.');
     }
     try {
       final bool launched = await _client.auth.signInWithOAuth(
@@ -186,11 +187,11 @@ class SupabaseAuthGateway implements AuthGateway {
       return 'E-mail ou senha incorretos.';
     }
     if (normalized.contains('email not confirmed')) {
-      return 'Confirme seu e-mail antes de entrar.';
+      return 'E-mail ou senha incorretos.';
     }
     if (normalized.contains('already registered') ||
         normalized.contains('already exists')) {
-      return 'Ja existe uma conta com este e-mail.';
+      return 'Nao foi possivel concluir a autenticacao.';
     }
     if (normalized.contains('rate limit') || normalized.contains('too many')) {
       return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';

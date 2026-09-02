@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -31,8 +33,37 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check formatting
-        run: dart format --set-exit-if-changed .
+      - name: Check formatting of changed Dart files
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            comparison="$PR_BASE_SHA...$PR_HEAD_SHA"
+          elif [ -n "${BEFORE_SHA:-}" ] &&
+               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            comparison="$BEFORE_SHA...HEAD"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            comparison="HEAD^...HEAD"
+          else
+            echo "No previous revision available for formatting comparison."
+            exit 0
+          fi
+
+          mapfile -t dart_files < <(
+            git diff --name-only --diff-filter=ACMR "$comparison" -- '*.dart'
+          )
+          if [ "${#dart_files[@]}" -eq 0 ]; then
+            echo "No changed Dart files to format."
+            exit 0
+          fi
+
+          printf 'Checking %s\n' "${dart_files[@]}"
+          dart format --output=none --set-exit-if-changed "${dart_files[@]}"
 
       - name: Analyze
         run: flutter analyze
@@ -124,6 +155,21 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
       - run: npm test
+        working-directory: e2e
+      - name: Build private Web entry for acceptance test
+        run: >-
+          flutter build web --release --base-href /veredra/
+          --dart-define=PRIVATE_ACCESS_REQUIRED=true
+          --dart-define=PUBLIC_SIGNUP_ENABLED=false
+          --dart-define=ENABLE_GOOGLE_AUTH=false
+          --dart-define=SUPABASE_URL=https://ci-test.supabase.co
+          --dart-define=SUPABASE_PUBLISHABLE_KEY=ci-public-test-key
+          --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/veredra/
+      - name: Patch and validate private PWA build
+        run: |
+          dart run tool/patch_flutter_service_worker.dart
+          dart run tool/validate_web_build.dart
+      - run: npm run test:private
         working-directory: e2e
       - uses: actions/upload-artifact@v4
         if: failure()

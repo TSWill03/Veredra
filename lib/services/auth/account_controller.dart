@@ -57,6 +57,14 @@ class AccountController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (busy) {
+      return;
+    }
+    final bool hadUser = user != null;
+    user = null;
+    passwordRecovery = false;
+    sessionExpired = hadUser;
+    notifyListeners();
     await _runVoid(_gateway.signOut);
   }
 

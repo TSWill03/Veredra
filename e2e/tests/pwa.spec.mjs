@@ -68,7 +68,10 @@ test('persists a reader bookmark after reload', async ({ page }) => {
   });
 
   await page.getByRole('button', { name: 'Novo marcador' }).click();
-  await page.getByLabel('Trecho importante').fill('Trecho persistente E2E');
+  const excerptField = page.getByLabel('Trecho importante');
+  await excerptField.click();
+  await page.keyboard.insertText('Trecho persistente E2E');
+  await expect(excerptField).toHaveValue('Trecho persistente E2E');
   await page.getByRole('button', { name: 'Salvar' }).click();
   await expect(page.getByText('Marcador salvo.').last()).toBeVisible();
 

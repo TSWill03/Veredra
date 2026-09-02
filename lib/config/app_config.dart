@@ -2,14 +2,18 @@
 class AppConfig {
   const AppConfig._();
 
-  static const String supabaseUrl =
-      String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: '',
+  );
   static const String supabasePublishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
     defaultValue: '',
   );
-  static const String legacySupabaseAnonKey =
-      String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+  static const String legacySupabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
   static const String webAuthRedirectUrl = String.fromEnvironment(
     'AUTH_REDIRECT_URL',
     defaultValue: 'https://wicolly.com.br/veredra/',
@@ -24,6 +28,20 @@ class AppConfig {
   );
   static const bool googleAuthEnabled = bool.fromEnvironment(
     'ENABLE_GOOGLE_AUTH',
+    defaultValue: false,
+  );
+
+  /// When enabled, production must not silently fall back to an anonymous
+  /// local-only library when authentication is unavailable.
+  static const bool privateAccessRequired = bool.fromEnvironment(
+    'PRIVATE_ACCESS_REQUIRED',
+    defaultValue: false,
+  );
+
+  /// Public self-service registration is disabled by default. Accounts for a
+  /// private deployment must be provisioned explicitly by the administrator.
+  static const bool publicSignupEnabled = bool.fromEnvironment(
+    'PUBLIC_SIGNUP_ENABLED',
     defaultValue: false,
   );
 

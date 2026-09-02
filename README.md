@@ -1,10 +1,10 @@
 <!-- Signature: dev.tswicolly03 -->
 # Veredra
 
-Veredra e um leitor Flutter offline-first para Windows, Android e Web/PWA. A
-biblioteca local continua disponivel sem conta; quando um projeto Supabase e
-configurado, o usuario pode autenticar e sincronizar somente os dados de leitura
-que autorizou.
+Veredra e um leitor Flutter offline-first para Windows, Android e Web/PWA. Em
+builds locais ou de desenvolvimento, a biblioteca pode continuar disponivel sem
+conta. A entrega privada de producao usa Cloudflare Access e exige uma sessao
+Supabase antes de abrir a biblioteca.
 
 URL Web canonica:
 
@@ -20,14 +20,16 @@ https://wicolly.com.br/veredra/
 - storage nativo atomico e IndexedDB na Web, com migracao do storage legado;
 - conta por e-mail/senha, confirmacao de e-mail, recuperacao/redefinicao,
   logout, renovacao de sessao e exclusao de conta;
+- entrada privada sem cadastro publico quando
+  `PRIVATE_ACCESS_REQUIRED=true` e `PUBLIC_SIGNUP_ENABLED=false`;
 - implementacao de OAuth Google preservada atras de feature flag e desativada
   nesta entrega;
 - sincronizacao offline-first de perfil, preferencias, metadados, progresso,
   marcadores, anotacoes, destaques, favoritos e estatisticas;
 - fila duravel, deduplicacao, retry com backoff, tombstones e resolucao
   deterministica de conflitos;
-- modo local sempre disponivel. Arquivos de livros nunca sao enviados sem
-  consentimento; nesta versao, upload completo permanece desabilitado.
+- arquivos de livros nunca sao enviados sem consentimento; nesta versao, upload
+  completo permanece desabilitado.
 
 ## Requisitos
 
@@ -47,7 +49,7 @@ flutter run -d android
 ```
 
 Sem `dart-define`, o app inicia honestamente em modo local. Para habilitar o
-cliente Supabase:
+cliente Supabase sem exigir login na abertura:
 
 ```bash
 flutter run -d chrome \
@@ -55,6 +57,18 @@ flutter run -d chrome \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=PUBLIC_KEY \
   --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/veredra/ \
   --dart-define=NATIVE_AUTH_REDIRECT_URL=veredra://auth-callback/ \
+  --dart-define=ENABLE_GOOGLE_AUTH=false
+```
+
+Para reproduzir a entrada privada de producao:
+
+```bash
+flutter run -d chrome \
+  --dart-define=PRIVATE_ACCESS_REQUIRED=true \
+  --dart-define=PUBLIC_SIGNUP_ENABLED=false \
+  --dart-define=SUPABASE_URL=https://PROJECT.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=PUBLIC_KEY \
+  --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/veredra/ \
   --dart-define=ENABLE_GOOGLE_AUTH=false
 ```
 
@@ -115,10 +129,19 @@ keystore guardada fora do repositorio e forneca as senhas apenas no ambiente
 seguro. Sem esse arquivo, o Gradle gera um APK release nao assinado, util para
 provar compilacao, mas inadequado para distribuicao.
 
-## Deploy Web
+## Deploy Web privado
 
 ```bash
-flutter build web --release --base-href /veredra/
+flutter build web \
+  --release \
+  --base-href /veredra/ \
+  --dart-define=PRIVATE_ACCESS_REQUIRED=true \
+  --dart-define=PUBLIC_SIGNUP_ENABLED=false \
+  --dart-define=ENABLE_GOOGLE_AUTH=false \
+  --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" \
+  --dart-define=AUTH_REDIRECT_URL=https://wicolly.com.br/veredra/
+
 dart run tool/patch_flutter_service_worker.dart
 dart run tool/validate_web_build.dart
 ```
@@ -136,11 +159,13 @@ O fallback equivalente a `/veredra/* -> /veredra/index.html 200` e implementado
 por uma Pages Function. O runtime Cloudflare rejeita a regra literal como loop
 porque o destino tambem casa com o wildcard.
 
-Consulte `docs/DEPLOYMENT.md` antes de publicar.
+Consulte `docs/PRIVATE_ACCESS.md` e `docs/DEPLOYMENT.md` antes de publicar.
 
 ## Limites atuais
 
 - login/sync reais dependem de projeto Supabase, SMTP e conta de teste;
+- Cloudflare Access precisa ser configurado fora do repositorio para bloquear a
+  entrega dos assets a visitantes nao autorizados;
 - Google OAuth permanece desativado por `ENABLE_GOOGLE_AUTH=false`; a
   implementacao sera retomada em entrega futura;
 - upload de livro/capa esta desabilitado ate existir UX de consentimento,
@@ -152,6 +177,7 @@ Consulte `docs/DEPLOYMENT.md` antes de publicar.
 
 - `docs/ARCHITECTURE.md`
 - `docs/AUTHENTICATION.md`
+- `docs/PRIVATE_ACCESS.md`
 - `docs/SYNCHRONIZATION.md`
 - `docs/LOCAL_STORAGE.md`
 - `docs/SECURITY.md`

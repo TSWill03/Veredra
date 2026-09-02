@@ -10,6 +10,7 @@ import 'models/app_profile.dart';
 import 'models/book_reference.dart';
 import 'models/reader_font_preset.dart';
 import 'pages/library_page.dart';
+import 'pages/private_login_page.dart';
 import 'services/annotation_service.dart';
 import 'services/backup_service.dart';
 import 'services/bookmark_service.dart';
@@ -61,52 +62,55 @@ Future<void> main() async {
     return true;
   };
 
-  await runZonedGuarded<Future<void>>(() async {
-    AuthGateway authGateway = const LocalOnlyAuthGateway();
-    RemoteSyncGateway? remoteSyncGateway;
-    if (AppConfig.isSupabaseConfigured) {
-      try {
-        await Supabase.initialize(
-          url: AppConfig.supabaseUrl,
-          publishableKey: AppConfig.effectiveSupabaseKey,
-          authOptions: FlutterAuthClientOptions(
-            authFlowType: AuthFlowType.pkce,
-            autoRefreshToken: true,
-            detectSessionInUri: true,
-            localStorage: SecureAuthLocalStorage(),
-            pkceAsyncStorage: SecurePkceStorage(),
-          ),
-          debug: false,
-        );
-        final SupabaseClient client = Supabase.instance.client;
-        authGateway = SupabaseAuthGateway(client);
-        remoteSyncGateway = SupabaseSyncGateway(client);
-      } catch (error, stackTrace) {
-        await diagnostics.record(
-          DiagnosticCategory.authentication,
+  await runZonedGuarded<Future<void>>(
+    () async {
+      AuthGateway authGateway = const LocalOnlyAuthGateway();
+      RemoteSyncGateway? remoteSyncGateway;
+      if (AppConfig.isSupabaseConfigured) {
+        try {
+          await Supabase.initialize(
+            url: AppConfig.supabaseUrl,
+            publishableKey: AppConfig.effectiveSupabaseKey,
+            authOptions: FlutterAuthClientOptions(
+              authFlowType: AuthFlowType.pkce,
+              autoRefreshToken: true,
+              detectSessionInUri: true,
+              localStorage: SecureAuthLocalStorage(),
+              pkceAsyncStorage: SecurePkceStorage(),
+            ),
+            debug: false,
+          );
+          final SupabaseClient client = Supabase.instance.client;
+          authGateway = SupabaseAuthGateway(client);
+          remoteSyncGateway = SupabaseSyncGateway(client);
+        } catch (error, stackTrace) {
+          await diagnostics.record(
+            DiagnosticCategory.authentication,
+            error,
+            stackTrace,
+          );
+        }
+      }
+
+      runApp(
+        VeredraApp(
+          accountController: AccountController(authGateway),
+          remoteSyncGateway: remoteSyncGateway,
+          diagnostics: diagnostics,
+        ),
+      );
+    },
+    (Object error, StackTrace stackTrace) {
+      unawaited(
+        diagnostics.record(
+          DiagnosticCategory.startup,
           error,
           stackTrace,
-        );
-      }
-    }
-
-    runApp(
-      VeredraApp(
-        accountController: AccountController(authGateway),
-        remoteSyncGateway: remoteSyncGateway,
-        diagnostics: diagnostics,
-      ),
-    );
-  }, (Object error, StackTrace stackTrace) {
-    unawaited(
-      diagnostics.record(
-        DiagnosticCategory.startup,
-        error,
-        stackTrace,
-        fatal: true,
-      ),
-    );
-  });
+          fatal: true,
+        ),
+      );
+    },
+  );
 }
 
 class VeredraApp extends StatefulWidget {
@@ -115,11 +119,13 @@ class VeredraApp extends StatefulWidget {
     this.accountController,
     this.remoteSyncGateway,
     this.diagnostics,
+    this.privateAccessRequired = AppConfig.privateAccessRequired,
   });
 
   final AccountController? accountController;
   final RemoteSyncGateway? remoteSyncGateway;
   final DiagnosticsService? diagnostics;
+  final bool privateAccessRequired;
 
   @override
   State<VeredraApp> createState() => _VeredraAppState();
@@ -240,6 +246,9 @@ class _VeredraAppState extends State<VeredraApp> {
         coordinator.preferences.automatic) {
       unawaited(coordinator.syncNow());
     }
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _handleThemeModeChanged(ThemeMode themeMode) async {
@@ -341,18 +350,48 @@ class _VeredraAppState extends State<VeredraApp> {
         backgroundColor: colorScheme.inverseSurface,
         contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
       ),
-      textTheme: ThemeData(
-        brightness: brightness,
-      ).textTheme.apply(
+      textTheme: ThemeData(brightness: brightness).textTheme.apply(
             bodyColor: colorScheme.onSurface,
             displayColor: colorScheme.onSurface,
           ),
       cardTheme: CardThemeData(
         color: colorScheme.surfaceContainer,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+    );
+  }
+
+  Widget _buildHome() {
+    if (!_isReady) {
+      return const _StartupPage();
+    }
+
+    return PrivateAccessGate(
+      privateAccessRequired: widget.privateAccessRequired,
+      accountController: _accountController,
+      child: LibraryPage(
+        currentProfile: _currentProfile!,
+        profileService: _profileService,
+        backupService: _backupService,
+        bookService: _bookService,
+        annotationService: _annotationService,
+        bookmarkService: _bookmarkService,
+        libraryService: _libraryService,
+        librarySearchService: _librarySearchService,
+        progressService: _progressService,
+        readingStatsService: _readingStatsService,
+        translationService: _translationService,
+        accountController: _accountController,
+        syncCoordinator: _syncCoordinator,
+        lastBookReference: _lastBookReference,
+        fontSize: _fontSize,
+        readerFontPreset: _readerFontPreset,
+        onThemeModeChanged: _handleThemeModeChanged,
+        onFontSizeChanged: _handleFontSizeChanged,
+        onReaderFontPresetChanged: _handleReaderFontPresetChanged,
+        onProfileChanged: _handleProfileChanged,
+        onLastBookChanged: _handleLastBookChanged,
       ),
     );
   }
@@ -365,31 +404,41 @@ class _VeredraAppState extends State<VeredraApp> {
       themeMode: _themeMode,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: _isReady
-          ? LibraryPage(
-              currentProfile: _currentProfile!,
-              profileService: _profileService,
-              backupService: _backupService,
-              bookService: _bookService,
-              annotationService: _annotationService,
-              bookmarkService: _bookmarkService,
-              libraryService: _libraryService,
-              librarySearchService: _librarySearchService,
-              progressService: _progressService,
-              readingStatsService: _readingStatsService,
-              translationService: _translationService,
-              accountController: _accountController,
-              syncCoordinator: _syncCoordinator,
-              lastBookReference: _lastBookReference,
-              fontSize: _fontSize,
-              readerFontPreset: _readerFontPreset,
-              onThemeModeChanged: _handleThemeModeChanged,
-              onFontSizeChanged: _handleFontSizeChanged,
-              onReaderFontPresetChanged: _handleReaderFontPresetChanged,
-              onProfileChanged: _handleProfileChanged,
-              onLastBookChanged: _handleLastBookChanged,
-            )
-          : const _StartupPage(),
+      home: _buildHome(),
+    );
+  }
+}
+
+class PrivateAccessGate extends StatelessWidget {
+  const PrivateAccessGate({
+    super.key,
+    required this.privateAccessRequired,
+    required this.accountController,
+    required this.child,
+  });
+
+  final bool privateAccessRequired;
+  final AccountController accountController;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!privateAccessRequired) {
+      return child;
+    }
+
+    return AnimatedBuilder(
+      animation: accountController,
+      builder: (BuildContext context, Widget? _) {
+        if (!accountController.isConfigured) {
+          return const _PrivateAccessConfigurationPage();
+        }
+        if (!accountController.isSignedIn ||
+            accountController.passwordRecovery) {
+          return PrivateLoginPage(accountController: accountController);
+        }
+        return child;
+      },
     );
   }
 }
@@ -408,11 +457,54 @@ class _StartupPage extends StatelessWidget {
           children: <Widget>[
             const CircularProgressIndicator(),
             const SizedBox(height: 18),
-            Text(
-              'Veredra',
-              style: theme.textTheme.titleLarge,
-            ),
+            Text('Veredra', style: theme.textTheme.titleLarge),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivateAccessConfigurationPage extends StatelessWidget {
+  const _PrivateAccessConfigurationPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.admin_panel_settings_outlined,
+                        size: 54,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Acesso privado não configurado',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Este build exige autenticação, mas não recebeu uma configuração válida do Supabase. O modo local anônimo foi bloqueado para proteger a biblioteca.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
