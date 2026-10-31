@@ -33,3 +33,15 @@
 - No commit desta etapa validar novamente análise, testes e compilação, sem declarar teste de iPhone sem dispositivo.
 - Branch de trabalho: feat/ios-external-hd-20261023. Para voltar à main: primeiro salvar mudanças locais e então `git switch main`; nunca usar `git reset --hard` sobre alterações não salvas.
 - Fontes: https://xcross.sh/docs/quick-start/ ; https://xcross.sh/docs/configuration/ ; https://docs.flutter.dev/deployment/ios .
+
+## Atualizacao (30/10/2026)
+
+- Motor iOS debug baixado para o cache do Flutter por meio do comando xcross flutter precache --mode debug (84,1 MB).
+- Swift 6.4.1, LLVM/ld64.lld, pymobiledevice3 e servico Apple Mobile Device verificados.
+- Xcode 27.2 estavel (27B52, 29/10/2026) recomendado: https://developer.apple.com/download/all/
+- SDK ainda sem instalar: Apple exige download do Xcode.xip autenticado pelo usuario; nao ha Xcode.xip no computador.
+- Salvamento direto em D:\Veredra_iOS\Xcode, evitando o C: com somente ~24 GB livres.
+- Scripts de duplo clique no HD: 01_Baixar_Xcode.url; 02_Instalar_SDK.cmd; 03_Autenticar_Apple.cmd; 04_Executar_iPhone.cmd.
+- Instalador detecta Xcode.xip oficial, valida tamanho e cabecalho xar! e extrai SDK/cache temporario para HD.
+- A senha Apple nao e solicitada no chat. Autenticacao e conexao fisica do iPhone seguem pendentes.
+- Compilacao unsigned iOS ja concluida com sucesso na CI; aparelho nao foi testado.
