@@ -6,6 +6,8 @@ import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart' as share_plus;
 
 import '../models/app_profile.dart';
 import '../models/book_reference.dart';
@@ -46,17 +48,24 @@ class BackupService {
       );
     }
 
-    final FileSaveLocation? location = await getSaveLocation(
-      suggestedName: '${_sanitizeFileName(profile.name)}.twrbackup',
-      acceptedTypeGroups: <XTypeGroup>[
-        const XTypeGroup(
-          label: 'Backup',
-          extensions: <String>['twrbackup', 'zip'],
-        ),
-      ],
-    );
-    if (location == null || location.path.isEmpty) {
-      return null;
+    // O seletor de destino de arquivo nao e suportado no iOS/Android.
+    // Em dispositivos moveis, o arquivo e compartilhado pela folha nativa.
+    final bool useShareSheet = Platform.isIOS || Platform.isAndroid;
+    String? destinationPath;
+    if (!useShareSheet) {
+      final FileSaveLocation? location = await getSaveLocation(
+        suggestedName: '${_sanitizeFileName(profile.name)}.twrbackup',
+        acceptedTypeGroups: <XTypeGroup>[
+          const XTypeGroup(
+            label: 'Backup',
+            extensions: <String>['twrbackup', 'zip'],
+          ),
+        ],
+      );
+      if (location == null || location.path.isEmpty) {
+        return null;
+      }
+      destinationPath = location.path;
     }
 
     final List<LibraryEntry> entries = await libraryService.loadEntries();
@@ -107,7 +116,29 @@ class BackupService {
       throw StateError('Nao foi possivel gerar o backup.');
     }
 
-    final File file = File(location.path);
+    if (useShareSheet) {
+      final Directory temp = await getTemporaryDirectory();
+      final File backup = File(p.join(
+        temp.path,
+        '${_sanitizeFileName(profile.name)}_${DateTime.now().millisecondsSinceEpoch}.twrbackup',
+      ));
+      await backup.writeAsBytes(encoded, flush: true);
+      final share_plus.ShareResult result =
+          await share_plus.SharePlus.instance.share(share_plus.ShareParams(
+        title: 'Backup do Veredra',
+        files: <share_plus.XFile>[
+          share_plus.XFile(backup.path, mimeType: 'application/zip'),
+        ],
+      ));
+      // Uma copia temporaria nao e backup persistente: o usuario precisa
+      // confirmar 'Salvar em Arquivos' ou um destino externo no share sheet.
+      if (result.status == share_plus.ShareResultStatus.dismissed) {
+        return null;
+      }
+      return backup.path;
+    }
+
+    final File file = File(destinationPath!);
     await file.writeAsBytes(encoded, flush: true);
     return file.path;
   }
@@ -121,10 +152,19 @@ class BackupService {
 
     final XFile? file = await openFile(
       acceptedTypeGroups: <XTypeGroup>[
-        const XTypeGroup(
-          label: 'Backup',
-          extensions: <String>['twrbackup', 'zip'],
-        ),
+        if (Platform.isIOS)
+          const XTypeGroup(
+            label: 'Backup',
+            uniformTypeIdentifiers: <String>[
+              'public.data',
+              'public.zip-archive'
+            ],
+          )
+        else
+          const XTypeGroup(
+            label: 'Backup',
+            extensions: <String>['twrbackup', 'zip'],
+          ),
       ],
       confirmButtonText: 'Importar backup',
     );

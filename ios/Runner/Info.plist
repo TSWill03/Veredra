@@ -6,6 +6,18 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Veredra</string>
+	<!-- Habilita veredra://auth-callback/ para retorno de autenticacao nativa. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.tswicolly03.veredra</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>veredra</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
