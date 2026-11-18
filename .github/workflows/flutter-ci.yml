@@ -47,7 +47,7 @@ jobs:
         run: dart run tool/validate_migrations.dart
 
       - name: Build Web at canonical subpath
-        run: flutter build web --release --base-href /veredra/
+        run: flutter build web --release --base-href /veredra/ --dart-define-from-file=config/supabase.production.json
 
       - name: Patch and validate PWA service worker
         run: |
@@ -55,7 +55,7 @@ jobs:
           dart run tool/validate_web_build.dart
 
       - name: Build Android debug APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --dart-define-from-file=config/supabase.production.json
 
       - name: Upload Web and Android artifacts
         uses: actions/upload-artifact@v4
@@ -78,7 +78,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build windows --release
+      - run: flutter build windows --release --dart-define-from-file=config/supabase.production.json
       - uses: actions/upload-artifact@v4
         with:
           name: veredra-windows
