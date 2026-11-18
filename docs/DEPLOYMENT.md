@@ -63,3 +63,12 @@ Preserve o artefato Web anterior e nunca rode migration destrutiva nesta fase.
 Rollback do site restaura a versao anterior da pasta/commit. Alteracoes de banco
 devem ser aditivas; tombstones e compatibilidade local evitam perda durante
 clientes em versoes diferentes.
+
+## Projeto Supabase hospedado — 2026-11-18
+
+- Organizacao: BlackLight Tech; ref `bfvbkypjyvyolguzzslt`; regiao `sa-east-1`.
+- `config/supabase.production.json` e publicavel e contem somente a configuracao permitida nos clientes Flutter. Nao adicionar nenhuma credencial secreta a este arquivo.
+- Os workflows de build recebem `--dart-define-from-file=config/supabase.production.json`. O deploy do site depende de atualizar `Wicolly-Sites` com o artefato Web assim gerado; atualizar o backend sozinho nao altera o bundle publicado.
+- O schema `auth_sync_schema` foi aplicado com RLS e Storage privado, junto da migration `restrict_delete_account_rpc`; a RPC de exclusao e executavel por `authenticated`, nao por `anon`. O advisor pode alertar sobre a capacidade intencional do papel autenticado de invocar esta funcao `SECURITY DEFINER`.
+- Pendencias externas: no Dashboard, confirmar Site URL `https://wicolly.com.br/veredra/`, allowlist de redirect Web e nativo `veredra://auth-callback/`, SMTP e politica de cadastro; testar email real, RLS com duas contas e sync de duas sessoes antes de publicar.
+- Em cliente novo, use `flutter run -d chrome --dart-define-from-file=config/supabase.production.json`. Mantenha o build Web anterior para rollback.
