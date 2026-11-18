@@ -21,6 +21,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ubuntu-latest moved to Ubuntu 26.04 / Java 25.0.5; Gradle 8.14
+      # with Kotlin DSL currently needs a pinned JDK 17 for this Android build.
+      - name: Set up JDK 17 for Android Gradle
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify Java toolchain
+        run: java --version
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
