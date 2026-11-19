@@ -44,6 +44,21 @@ class SyncCoordinator extends ChangeNotifier {
   DateTime? lastSyncAt;
   int pendingCount = 0;
   String? errorMessage;
+
+  /// Only counts reading-metadata operations; never book files or chapters.
+  String? activeStep;
+  int processedOperations = 0;
+  int totalOperations = 0;
+
+  double? get operationProgress {
+    if (phase != SyncPhase.synchronizing ||
+        activeStep != 'Enviando dados de leitura' ||
+        totalOperations == 0) {
+      return null;
+    }
+    return processedOperations / totalOperations;
+  }
+
   Future<void>? _activeSync;
   StreamSubscription<bool>? _networkSubscription;
   Timer? _automaticTimer;
@@ -116,6 +131,9 @@ class SyncCoordinator extends ChangeNotifier {
 
     phase = SyncPhase.synchronizing;
     errorMessage = null;
+    activeStep = 'Preparando dados de leitura';
+    processedOperations = 0;
+    totalOperations = 0;
     notifyListeners();
     final String deviceId = await deviceIdentityService.loadOrCreateId();
 
@@ -132,8 +150,11 @@ class SyncCoordinator extends ChangeNotifier {
       }
     }
     pendingCount = (await queue.load()).length;
+    activeStep = 'Verificando conexao';
+    notifyListeners();
 
     if (!await networkMonitor.isOnline()) {
+      activeStep = null;
       phase = SyncPhase.offline;
       notifyListeners();
       return;
@@ -147,7 +168,14 @@ class SyncCoordinator extends ChangeNotifier {
         name: 'Veredra ${deviceIdentityService.platformLabel}',
         platform: deviceIdentityService.platformLabel,
       );
-      for (final SyncOperation operation in await queue.due()) {
+      final List<SyncOperation> operations = await queue.due();
+      totalOperations = operations.length;
+      activeStep = operations.isEmpty
+          ? 'Buscando dados de leitura'
+          : 'Enviando dados de leitura';
+      notifyListeners();
+
+      for (final SyncOperation operation in operations) {
         try {
           await remoteGateway!.push(operation);
           await queue.markSucceeded(operation.id);
@@ -164,12 +192,19 @@ class SyncCoordinator extends ChangeNotifier {
             );
             break;
           }
+        } finally {
+          processedOperations++;
+          notifyListeners();
         }
       }
 
       if (phase != SyncPhase.sessionExpired) {
+        activeStep = 'Buscando dados de leitura';
+        notifyListeners();
         final List<RemoteSyncRecord> records =
             await remoteGateway!.pullSince(userId: userId, since: lastSyncAt);
+        activeStep = 'Aplicando dados de leitura';
+        notifyListeners();
         await localRepository.applyRemoteRecords(records);
         lastSyncAt = DateTime.now().toUtc();
         await _storage.writeString(
@@ -203,6 +238,7 @@ class SyncCoordinator extends ChangeNotifier {
           ? SyncPhase.pending
           : SyncPhase.synchronized;
     }
+    activeStep = null;
     notifyListeners();
   }
 

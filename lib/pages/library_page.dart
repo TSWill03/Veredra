@@ -233,6 +233,40 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _openLibraryEntry(LibraryEntry entry) async {
+    if (entry.hasOnlySyncedMetadata) {
+      if (!mounted) {
+        return;
+      }
+      final bool? importRequested = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: const Text('Capitulos nao disponiveis neste dispositivo'),
+          content: Text(
+            '"${entry.title}" tem ${entry.chapterCount} capitulos '
+            'registrados na biblioteca, mas o conteudo do livro nao foi '
+            'sincronizado. A sincronizacao atual transfere apenas '
+            'metadados e progresso de leitura.\n\n'
+            'Importe novamente os arquivos originais neste dispositivo '
+            'para ler. Os dados de progresso remoto nao serao apagados.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Fechar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Importar arquivo'),
+            ),
+          ],
+        ),
+      );
+      if (importRequested == true && mounted) {
+        await _showImportOptions();
+      }
+      return;
+    }
+
     await _runBusyTask(() async {
       final Book book = await widget.bookService.reopenBook(entry.reference);
       await _openBook(book);
@@ -1541,9 +1575,12 @@ class _LibraryBookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool hasCover = entry.reference.hasCover;
-    final String secondaryMeta = entry.chapterCount > 0
-        ? '${entry.reference.format.label} - ${entry.chapterCount} capitulos'
-        : entry.reference.format.label;
+    final bool missingContent = entry.hasOnlySyncedMetadata;
+    final String secondaryMeta = missingContent
+        ? '${entry.chapterCount} capitulos registrados (nao baixados)'
+        : entry.chapterCount > 0
+            ? '${entry.reference.format.label} - ${entry.chapterCount} capitulos'
+            : entry.reference.format.label;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1649,10 +1686,15 @@ class _LibraryBookCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  entry.reference.subtitle,
-                  maxLines: 2,
+                  missingContent
+                      ? 'Somente metadados sincronizados. Importe o '
+                          'arquivo para ler neste aparelho.'
+                      : entry.reference.subtitle,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: missingContent ? theme.colorScheme.error : null,
+                  ),
                 ),
                 if (entry.reference.altTitle?.trim().isNotEmpty ??
                     false) ...<Widget>[
@@ -1693,8 +1735,10 @@ class _LibraryBookCard extends StatelessWidget {
                     ),
                     FilledButton.tonalIcon(
                       onPressed: onOpen,
-                      icon: const Icon(Icons.auto_stories_rounded),
-                      label: const Text('Abrir'),
+                      icon: Icon(missingContent
+                          ? Icons.file_upload_outlined
+                          : Icons.auto_stories_rounded),
+                      label: Text(missingContent ? 'Importar' : 'Abrir'),
                     ),
                   ],
                 ),

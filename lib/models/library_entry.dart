@@ -20,6 +20,12 @@ class LibraryEntry {
 
   String get title => reference.title;
 
+  /// Synced metadata is not proof that book chapters are on this device.
+  bool get hasOnlySyncedMetadata =>
+      reference.sourceLabel == 'Metadados sincronizados' &&
+      reference.assetPaths.isEmpty &&
+      !reference.usesDirectory;
+
   LibraryEntry copyWith({
     BookReference? reference,
     int? chapterCount,

@@ -2,8 +2,7 @@
 name: txt_webnovel_reader
 description: MVP de leitor continuo para livros em .txt, com foco inicial em desktop.
 publish_to: "none"
-version: 0.1.1+2
-
+version: 0.1.2+3
 environment:
   sdk: ">=3.4.0 <4.0.0"
 
