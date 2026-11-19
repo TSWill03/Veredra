@@ -25,6 +25,9 @@ import 'services/auth/auth_gateway.dart';
 import 'services/auth/secure_auth_storage.dart';
 import 'services/auth/supabase_auth_gateway.dart';
 import 'services/diagnostics_service.dart';
+import 'services/sync/book_file_remote_gateway.dart';
+import 'services/sync/book_file_sync_service.dart';
+import 'services/sync/supabase_book_file_gateway.dart';
 import 'services/sync/device_identity_service.dart';
 import 'services/sync/local_sync_repository.dart';
 import 'services/sync/network_monitor.dart';
@@ -64,6 +67,7 @@ Future<void> main() async {
   await runZonedGuarded<Future<void>>(() async {
     AuthGateway authGateway = const LocalOnlyAuthGateway();
     RemoteSyncGateway? remoteSyncGateway;
+    BookFileRemoteGateway? bookFileRemoteGateway;
     if (AppConfig.isSupabaseConfigured) {
       try {
         await Supabase.initialize(
@@ -81,6 +85,7 @@ Future<void> main() async {
         final SupabaseClient client = Supabase.instance.client;
         authGateway = SupabaseAuthGateway(client);
         remoteSyncGateway = SupabaseSyncGateway(client);
+        bookFileRemoteGateway = SupabaseBookFileGateway(client);
       } catch (error, stackTrace) {
         await diagnostics.record(
           DiagnosticCategory.authentication,
@@ -94,6 +99,7 @@ Future<void> main() async {
       VeredraApp(
         accountController: AccountController(authGateway),
         remoteSyncGateway: remoteSyncGateway,
+        bookFileRemoteGateway: bookFileRemoteGateway,
         diagnostics: diagnostics,
       ),
     );
@@ -114,11 +120,13 @@ class VeredraApp extends StatefulWidget {
     super.key,
     this.accountController,
     this.remoteSyncGateway,
+    this.bookFileRemoteGateway,
     this.diagnostics,
   });
 
   final AccountController? accountController;
   final RemoteSyncGateway? remoteSyncGateway;
+  final BookFileRemoteGateway? bookFileRemoteGateway;
   final DiagnosticsService? diagnostics;
 
   @override
@@ -226,6 +234,14 @@ class _VeredraAppState extends State<VeredraApp> {
       deviceIdentityService: DeviceIdentityService(),
       networkMonitor: ConnectivityNetworkMonitor(),
       remoteGateway: widget.remoteSyncGateway,
+      bookFileSyncService: widget.bookFileRemoteGateway == null
+          ? null
+          : BookFileSyncService(
+              profileId: profileId,
+              libraryService: _libraryService,
+              bookService: _bookService,
+              remote: widget.bookFileRemoteGateway!,
+            ),
       diagnostics: _diagnostics,
     );
     await coordinator.initialize();
