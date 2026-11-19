@@ -79,11 +79,11 @@ class BookService {
     }
 
     for (final String path in reference.assetPaths) {
-      if (_isWebStoredPath(path) && await _storage.exists(_storageKey(path))) {
-        return true;
+      if (!_isWebStoredPath(path) || !await _storage.exists(_storageKey(path))) {
+        return false;
       }
     }
-    return false;
+    return true;
   }
 
   Future<Book?> importBook(ImportKind kind) async {
@@ -278,6 +278,7 @@ class BookService {
 
   Book _applyPreferredReference(Book book, BookReference reference) {
     return book.copyWith(
+      id: reference.syncedBookId ?? book.id,
       title: reference.title,
       reference: book.reference.copyWith(
         title: reference.title,
@@ -426,7 +427,8 @@ class BookService {
       format: reference.format,
       reference: reference.copyWith(assetPaths: existingPaths),
       filePaths: existingPaths,
-      id: _buildFileBookId(reference.format, existingPaths),
+      id: reference.syncedBookId ??
+          _buildFileBookId(reference.format, existingPaths),
     );
   }
 
