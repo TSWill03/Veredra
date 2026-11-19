@@ -102,6 +102,8 @@ Secret pertence exclusivamente a configuracao Google do Supabase hospedado.
 O Veredra usa `signInWithOAuth` do Supabase via navegador, nao o SDK
 `google_sign_in` nativo. Portanto `REVERSED_CLIENT_ID` do plist do Google
 nao e necessario neste fluxo. Nunca versionar o Client Secret do Google ou
-um Supabase PAT. Mantenha `ENABLE_GOOGLE_AUTH=false` no build de producao ate
-validar o provedor no backend, retorno PKCE, cancelamento, sessao e E2E em
-Web, Android e iOS. Testar em dispositivos fisicos antes da liberacao.
+um Supabase PAT. Na branch de preview `feat/google-oauth-20261119`,
+`ENABLE_GOOGLE_AUTH=true` permite validar o botao sem publicar em producao.
+O build atual em `main` continua com Google desabilitado. Validar fluxo
+PKCE completo, cancelamento, sessao e E2E em Web, Android e iOS, alem de
+testar dispositivos fisicos antes da liberacao e deploy.
