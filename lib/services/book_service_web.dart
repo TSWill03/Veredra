@@ -37,12 +37,14 @@ class ImportOption {
 }
 
 class BookService {
+  BookService({AppStorage? storage}) : _storage = storage ?? createAppStorage();
+
   static const int _maxCachedChapterContents = 24;
   static const String _webStoredPrefix = 'veredra://';
 
   final LinkedHashMap<String, String> _chapterContentCache =
       LinkedHashMap<String, String>();
-  final AppStorage _storage = createAppStorage();
+  final AppStorage _storage;
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -79,11 +81,12 @@ class BookService {
     }
 
     for (final String path in reference.assetPaths) {
-      if (_isWebStoredPath(path) && await _storage.exists(_storageKey(path))) {
-        return true;
+      if (!_isWebStoredPath(path) ||
+          !await _storage.exists(_storageKey(path))) {
+        return false;
       }
     }
-    return false;
+    return true;
   }
 
   Future<Book?> importBook(ImportKind kind) async {
@@ -278,6 +281,7 @@ class BookService {
 
   Book _applyPreferredReference(Book book, BookReference reference) {
     return book.copyWith(
+      id: reference.syncedBookId ?? book.id,
       title: reference.title,
       reference: book.reference.copyWith(
         title: reference.title,
@@ -426,7 +430,8 @@ class BookService {
       format: reference.format,
       reference: reference.copyWith(assetPaths: existingPaths),
       filePaths: existingPaths,
-      id: _buildFileBookId(reference.format, existingPaths),
+      id: reference.syncedBookId ??
+          _buildFileBookId(reference.format, existingPaths),
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../diagnostics_service.dart';
 import '../storage/app_storage.dart';
+import 'book_file_sync_service.dart';
 import 'device_identity_service.dart';
 import 'local_sync_repository.dart';
 import 'network_monitor.dart';
@@ -23,6 +24,7 @@ class SyncCoordinator extends ChangeNotifier {
     required this.deviceIdentityService,
     required this.networkMonitor,
     required this.remoteGateway,
+    this.bookFileSyncService,
     AppStorage? storage,
     DiagnosticsService? diagnostics,
   })  : _storage = storage ?? createAppStorage(),
@@ -36,6 +38,7 @@ class SyncCoordinator extends ChangeNotifier {
   final DeviceIdentityService deviceIdentityService;
   final NetworkMonitor networkMonitor;
   final RemoteSyncGateway? remoteGateway;
+  final BookFileSyncService? bookFileSyncService;
   final AppStorage _storage;
   final DiagnosticsService _diagnostics;
 
@@ -45,18 +48,25 @@ class SyncCoordinator extends ChangeNotifier {
   int pendingCount = 0;
   String? errorMessage;
 
-  /// Only counts reading-metadata operations; never book files or chapters.
+  /// Metadata operation progress and separate book transfer progress.
   String? activeStep;
   int processedOperations = 0;
   int totalOperations = 0;
+  int processedBooks = 0;
+  int totalBooks = 0;
+  int uploadedBooks = 0;
+  int downloadedBooks = 0;
+  String? bookSyncWarning;
 
   double? get operationProgress {
-    if (phase != SyncPhase.synchronizing ||
-        activeStep != 'Enviando dados de leitura' ||
-        totalOperations == 0) {
-      return null;
+    if (phase != SyncPhase.synchronizing) return null;
+    if (activeStep == 'Sincronizando livros' && totalBooks > 0) {
+      return processedBooks / totalBooks;
     }
-    return processedOperations / totalOperations;
+    if (activeStep == 'Enviando dados de leitura' && totalOperations > 0) {
+      return processedOperations / totalOperations;
+    }
+    return null;
   }
 
   Future<void>? _activeSync;
@@ -106,6 +116,13 @@ class SyncCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setSyncBookFiles(bool enabled) async {
+    preferences = await preferencesService.setSyncBookFiles(enabled);
+    bookSyncWarning = null;
+    notifyListeners();
+    if (enabled) await syncNow(stageSnapshot: true);
+  }
+
   Future<void> syncNow({bool stageSnapshot = true}) {
     return _activeSync ??=
         _synchronize(stageSnapshot: stageSnapshot).whenComplete(
@@ -134,6 +151,11 @@ class SyncCoordinator extends ChangeNotifier {
     activeStep = 'Preparando dados de leitura';
     processedOperations = 0;
     totalOperations = 0;
+    processedBooks = 0;
+    totalBooks = 0;
+    uploadedBooks = 0;
+    downloadedBooks = 0;
+    bookSyncWarning = null;
     notifyListeners();
     final String deviceId = await deviceIdentityService.loadOrCreateId();
 
@@ -211,6 +233,30 @@ class SyncCoordinator extends ChangeNotifier {
           _lastSyncKey,
           lastSyncAt!.toIso8601String(),
         );
+        if (preferences.syncBookFiles && bookFileSyncService != null) {
+          activeStep = 'Sincronizando livros';
+          notifyListeners();
+          final BookFileSyncReport report =
+              await bookFileSyncService!.synchronize(
+            userId: userId,
+            deviceId: deviceId,
+            onProgress: (String stage, int done, int total) {
+              activeStep = stage;
+              processedBooks = done;
+              totalBooks = total;
+              notifyListeners();
+            },
+          );
+          uploadedBooks = report.uploaded;
+          downloadedBooks = report.downloaded;
+          if (report.hasErrors) {
+            hadFailure = true;
+            bookSyncWarning = report.errors.take(3).join(' ');
+          }
+        } else if (preferences.syncBookFiles) {
+          hadFailure = true;
+          bookSyncWarning = 'Transferencia de livros indisponivel neste build.';
+        }
       }
     } on SyncRemoteException catch (error, stackTrace) {
       hadFailure = true;

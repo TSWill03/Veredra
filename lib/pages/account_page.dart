@@ -384,15 +384,18 @@ class _AccountPageState extends State<AccountPage> {
                       const SizedBox(height: 6),
                       Text(
                         sync.operationProgress != null
-                            ? '${sync.processedOperations} de ${sync.totalOperations} '
-                                'alteracoes processadas'
+                            ? sync.activeStep == 'Sincronizando livros'
+                                ? '${sync.processedBooks} de ${sync.totalBooks} livros verificados'
+                                : '${sync.processedOperations} de ${sync.totalOperations} '
+                                    'alteracoes processadas'
                             : 'Verificando e atualizando os registros...',
                         key: const Key('sync-progress-count'),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Esta barra acompanha apenas dados de leitura. '
-                        'Arquivos e capitulos nao sao transferidos neste modo.',
+                      Text(
+                        sync.preferences.syncBookFiles
+                            ? 'Arquivos enviados apenas com seu consentimento.'
+                            : 'Somente dados de leitura; arquivos permanecem locais.',
                       ),
                     ],
                   ),
@@ -408,6 +411,38 @@ class _AccountPageState extends State<AccountPage> {
                   'destaques e estatisticas. Exige consentimento.',
                 ),
               ),
+              SwitchListTile(
+                key: const Key('sync-book-files-switch'),
+                value: sync?.preferences.syncBookFiles ?? false,
+                onChanged: sync == null ||
+                        !sync.preferences.enabled ||
+                        sync.phase == SyncPhase.synchronizing ||
+                        account.busy
+                    ? null
+                    : (bool enabled) => _setBookFileConsent(sync, enabled),
+                title: const Text('Sincronizar livros completos'),
+                subtitle: const Text(
+                  'Envia e restaura capitulos TXT/EPUB, capas e PDFs '
+                  '(PDF apenas no aplicativo nativo). '
+                  'Armazenamento privado no Supabase, ate 95 MB por pacote. '
+                  'Opcao separada: desativada por padrao.',
+                ),
+              ),
+              if (sync?.bookSyncWarning != null)
+                _MessageCard(
+                  icon: Icons.warning_amber_outlined,
+                  message: sync!.bookSyncWarning!,
+                  error: true,
+                ),
+              if (sync != null &&
+                  (sync.uploadedBooks > 0 || sync.downloadedBooks > 0))
+                ListTile(
+                  leading: const Icon(Icons.import_export_rounded),
+                  title: Text(
+                    '${sync.uploadedBooks} livro(s) enviado(s), '
+                    '${sync.downloadedBooks} restaurado(s)',
+                  ),
+                ),
               SwitchListTile(
                 key: const Key('sync-automatic-switch'),
                 value: sync?.preferences.automatic ?? true,
@@ -440,24 +475,18 @@ class _AccountPageState extends State<AccountPage> {
         const SizedBox(height: 16),
         Text('Armazenamento', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Card(
+        Card(
           child: Column(
             children: <Widget>[
               ListTile(
-                leading: Icon(Icons.data_usage_rounded),
-                title: Text('Somente dados de leitura'),
-                subtitle:
-                    Text('Politica atual. Arquivos e capas ficam locais.'),
-                trailing: Icon(Icons.check_circle_rounded),
-              ),
-              ListTile(
-                enabled: false,
-                leading: Icon(Icons.cloud_upload_outlined),
-                title: Text('Sincronizacao completa'),
-                subtitle: Text(
-                  'Bloqueada ate o upload criptograficamente verificado e os '
-                  'limites de quota serem habilitados.',
-                ),
+                leading: const Icon(Icons.data_usage_rounded),
+                title: Text(sync?.preferences.syncBookFiles == true
+                    ? 'Conteudo e dados de leitura'
+                    : 'Somente dados de leitura'),
+                subtitle: Text(sync?.preferences.syncBookFiles == true
+                    ? 'Livros no bucket privado. Sem criptografia de ponta a ponta.'
+                    : 'Arquivos e capas permanecem locais.'),
+                trailing: const Icon(Icons.check_circle_rounded),
               ),
             ],
           ),
@@ -475,13 +504,16 @@ class _AccountPageState extends State<AccountPage> {
         ),
         const SizedBox(height: 16),
         Text('Privacidade', style: Theme.of(context).textTheme.titleLarge),
-        const Card(
+        Card(
           child: ListTile(
-            leading: Icon(Icons.shield_outlined),
-            title: Text('Leitura continua mesmo sem backend'),
+            leading: const Icon(Icons.shield_outlined),
+            title: const Text('Leitura continua mesmo sem backend'),
             subtitle: Text(
-              'Erros de conta ou sincronizacao nunca bloqueiam a biblioteca '
-              'local. Conteudo de livros nao e enviado no modo atual.',
+              sync?.preferences.syncBookFiles == true
+                  ? 'Conteudo enviado ao armazenamento privado da conta. '
+                      'Desativar o envio nao remove automaticamente arquivos da nuvem.'
+                  : 'Falhas na nuvem nao bloqueiam a leitura local; '
+                      'o conteudo de livros nao e enviado.',
             ),
           ),
         ),
@@ -500,6 +532,39 @@ class _AccountPageState extends State<AccountPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _setBookFileConsent(SyncCoordinator sync, bool enabled) async {
+    if (!enabled) {
+      await sync.setSyncBookFiles(false);
+      return;
+    }
+    final bool accepted = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+            title: const Text('Enviar seus livros para a nuvem?'),
+            content: const Text(
+              'Capitulos, PDFs e capas serao enviados ao bucket privado '
+              'da sua conta Supabase. Nao ha criptografia de ponta a ponta. '
+              'Confirme que voce tem autorizacao para armazenar esses arquivos. '
+              'Pacotes acima de 95 MB nao serao enviados. '
+              'Desativar a opcao nao exclui arquivos ja enviados; '
+              'a exclusao de conta remove os dados remotos.',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Autorizo o envio'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (accepted) await sync.setSyncBookFiles(true);
   }
 
   Future<void> _submit(AccountController account) async {

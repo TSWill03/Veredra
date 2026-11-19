@@ -144,16 +144,66 @@ class SupabaseAuthGateway implements AuthGateway {
 
   @override
   Future<void> deleteAccount() async {
+    final String? userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      throw StateError('Entre na conta antes de exclui-la.');
+    }
     try {
+      // Removing auth.users cascades SQL rows, but not Storage objects.
+      // Purge under the current RLS-scoped session first; on failure leave
+      // the account intact so the cleanup can be retried.
+      await _deleteOwnedBookObjects(userId);
       await _client.rpc<void>('delete_own_account');
       await _client.auth.signOut(scope: SignOutScope.local);
-    } on PostgrestException catch (error) {
+    } on PostgrestException catch (_) {
+      throw StateError('Nao foi possivel excluir a conta agora.');
+    } on StorageException catch (_) {
       throw StateError(
-        error.message.isEmpty
-            ? 'Nao foi possivel excluir a conta agora.'
-            : 'Nao foi possivel excluir a conta agora.',
+        'A limpeza dos livros remotos falhou. '
+        'A conta foi preservada para tentar novamente.',
       );
     }
+  }
+
+  Future<void> _deleteOwnedBookObjects(String userId) async {
+    final StorageFileApi bucket = _client.storage.from('veredra-books');
+
+    Future<void> clearFolder(String folder, int depth) async {
+      if (depth > 5) {
+        throw StateError('Estrutura de arquivos remotos invalida.');
+      }
+      while (true) {
+        final List<FileObject> objects = await bucket.list(
+          path: folder,
+          searchOptions: const SearchOptions(limit: 100),
+        );
+        if (objects.isEmpty) return;
+        final List<String> files = <String>[];
+        final List<String> folders = <String>[];
+        for (final FileObject object in objects) {
+          if (object.name.isEmpty ||
+              object.name.contains('/') ||
+              object.name == '.' ||
+              object.name == '..') {
+            throw StateError('Arquivo remoto com nome invalido.');
+          }
+          final String path = '$folder/${object.name}';
+          if (object.id == null) {
+            folders.add(path);
+          } else {
+            files.add(path);
+          }
+        }
+        for (final String subfolder in folders) {
+          await clearFolder(subfolder, depth + 1);
+        }
+        if (files.isNotEmpty) {
+          await bucket.remove(files);
+        }
+      }
+    }
+
+    await clearFolder(userId, 0);
   }
 
   AuthSessionEvent _mapEvent(AuthChangeEvent event) {

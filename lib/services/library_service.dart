@@ -7,7 +7,10 @@ import '../models/library_entry.dart';
 import 'storage/app_storage.dart';
 
 class LibraryService {
-  final AppStorage _storage = createAppStorage();
+  LibraryService({AppStorage? storage})
+      : _storage = storage ?? createAppStorage();
+
+  final AppStorage _storage;
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
