@@ -3,6 +3,6 @@
   "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_i5RgYcOcXFTUksDluHwZow_34eKI2j-",
   "AUTH_REDIRECT_URL": "https://wicolly.com.br/veredra/",
   "NATIVE_AUTH_REDIRECT_URL": "veredra://auth-callback/",
-  "ENABLE_GOOGLE_AUTH": "false",
+  "ENABLE_GOOGLE_AUTH": "true",
   "ENABLE_DIAGNOSTICS_UPLOAD": "false"
 }
