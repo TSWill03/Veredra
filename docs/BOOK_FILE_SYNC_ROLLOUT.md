@@ -54,3 +54,32 @@ The existing and reviewed `book_content_sync` migration was applied to the Vered
 Verified against hosted schema: private bucket retains `public=false`; `application/zip` is allowed by the bucket and `book_assets_mime_type_check`; user-prefixed authenticated INSERT policy permits `.zip`; SELECT/UPDATE/DELETE policies remain unchanged; index `book_assets_owner_book_idx` exists. Before/after metadata counts: 10 books, 0 assets, 0 blobs. Rollback-only SQL probe of book_assets ZIP insert succeeded without committed data. This is schema verification only, NOT a successful end-to-end authenticated Storage upload/download.
 
 Before enabling wide rollout, do a real upload/download via the app with a test account, verify user A cannot access B, quotas, conflicts, offline restore and upload error diagnostics. Backup of preflight policy definitions and cautious rollback procedure is stored outside Git on the authorized Destruking computer.
+
+
+## Large EPUB with repeated TOC chapter bodies — 2026-11-19
+
+The Windows source device revealed a historical imported EPUB with 326 distinct
+chapter paths but byte-identical chapter text. Raw total: about 335.9 MiB;
+unique body: about 1.03 MiB. The old code refused reopening/sync at 128 MiB
+before any upload could reach Supabase.
+
+The fix is conservative: reopening existing native collections still enforces
+per-file (16 MiB) and chapter-count safety, without rejecting the sum of
+duplicated legacy files. Transfer uses schema 2 only when repeated content is
+present; the ZIP stores unique chapter bytes once, but a manifest preserves
+each chapter index and title. Restore writes one content file per unique
+body and retains every chapter reference. Older schema-1 bundles remain
+unchanged and readable. A known-reasons allowlist improves warning messages
+without exposing content or filesystem paths.
+
+Verification: Flutter analyze 0 issues; regression tests cover deduplicated
+upload, chapter/title preservation, restored offline reading, deterministic
+re-sync and >128 MiB logical repeat data. A READ-ONLY offline dry run of
+the actual 326-file imported book on the authorized Destruking computer
+produced a schema-2 ZIP with 326 manifest entries, 1 unique chapter payload
+and 892,191 bytes; the source was not changed, and no network upload occurred.
+The temporary test using the private local path was removed from Git.
+
+Important: this is a synchronization/archival fix. The EPUB importer's TOC
+appears to repeat a whole-book body as 326 chapters; correct navigation
+requires separate source-EPUB analysis, without silently changing progress.

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:crypto/crypto.dart';
 import 'package:epubx/epubx.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -286,6 +287,7 @@ class BookService {
           sourceLabel: reference.sourceLabel,
           preferredCoverPath: reference.coverPath,
           copyToManagedStorage: false,
+          skipTotalLimitForExisting: true,
         ).then((Book book) => _applyPreferredReference(book, reference));
       case BookFormat.pdf:
         return loadPdfBook(
@@ -444,6 +446,7 @@ class BookService {
     required bool copyToManagedStorage,
     String? preferredCoverPath,
     BookFormat format = BookFormat.text,
+    bool skipTotalLimitForExisting = false,
   }) async {
     final List<String> normalizedPaths =
         await _normalizeExistingPaths(filePaths);
@@ -452,7 +455,10 @@ class BookService {
         'Nenhum arquivo de texto valido foi encontrado para importar.',
       );
     }
-    await _validateLocalTextFiles(normalizedPaths);
+    await _validateLocalTextFiles(
+      normalizedPaths,
+      skipTotalLimit: skipTotalLimitForExisting,
+    );
 
     final List<String> finalPaths = copyToManagedStorage
         ? await _copyFilesToManagedStorage(
@@ -555,7 +561,7 @@ class BookService {
       );
     }
 
-    return _buildTextBook(
+    final Book book = await _buildTextBook(
       title: reference.title,
       format: reference.format,
       reference: reference.copyWith(assetPaths: existingPaths),
@@ -563,6 +569,36 @@ class BookService {
       id: reference.syncedBookId ??
           _buildFileBookId(reference.format, existingPaths),
     );
+    final String? syncedBookId = reference.syncedBookId;
+    if (syncedBookId == null) return book;
+    final String folder = sha256.convert(utf8.encode(syncedBookId)).toString();
+    final String? sidecar = await _storage.readString(
+      'profiles/$_activeProfileId/storage/synced_books/$folder/chapter_titles.json',
+    );
+    if (sidecar == null) return book;
+    try {
+      final dynamic titles = jsonDecode(sidecar);
+      if (titles is List<dynamic> &&
+          titles.length == existingPaths.length &&
+          titles.every(
+              (dynamic title) => title is String && title.trim().isNotEmpty)) {
+        return book.copyWith(
+          chapters: <Chapter>[
+            for (int i = 0; i < existingPaths.length; i++)
+              Chapter(
+                index: i,
+                sortNumber: i + 1,
+                title: titles[i] as String,
+                fileName: p.basename(existingPaths[i]),
+                path: existingPaths[i],
+              ),
+          ],
+        );
+      }
+    } on FormatException {
+      // A damaged optional title sidecar does not prevent offline reading.
+    }
+    return book;
   }
 
   Future<Book> loadEpubBook(String sourcePath) async {
@@ -1104,7 +1140,10 @@ class BookService {
         : _normalizeDisplayTitle(fileTitle);
   }
 
-  Future<void> _validateLocalTextFiles(List<String> paths) async {
+  Future<void> _validateLocalTextFiles(
+    List<String> paths, {
+    bool skipTotalLimit = false,
+  }) async {
     final List<int> sizes = <int>[];
     for (final String path in paths) {
       if (_isWebStoredPath(path)) {
@@ -1114,7 +1153,23 @@ class BookService {
         sizes.add(await File(path).length());
       }
     }
-    ImportLimits.validateTextCollection(sizes);
+    if (skipTotalLimit) {
+      // Previously imported EPUBs may repeat the same body across TOC items.
+      // Retain count and per-file safety, without rejecting an existing book
+      // purely because its summed (duplicated) length exceeds the import cap.
+      if (sizes.length > ImportLimits.maxTextFileCount) {
+        throw StateError('Numero de capitulos excede o limite seguro.');
+      }
+      for (final int size in sizes) {
+        ImportLimits.validateFileSize(
+          ImportPayloadKind.text,
+          size,
+          label: 'Um capitulo',
+        );
+      }
+    } else {
+      ImportLimits.validateTextCollection(sizes);
+    }
   }
 
   Future<List<String>> _normalizeExistingPaths(List<String> paths) async {
