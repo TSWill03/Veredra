@@ -40,10 +40,8 @@ jobs:
       - name: Install Dart and Flutter dependencies
         run: flutter pub get
 
-      # Instala pods antes do build para deixar o workspace pronto.
-      - name: Install CocoaPods dependencies
-        working-directory: ios
-        run: pod install --repo-update
+      # O Flutter prepara Podfile/SwiftPM e executa CocoaPods durante o build.
+      # Executar pod install antes do primeiro build falha se Podfile ainda nao existe.
 
       - name: Analyze project
         run: flutter analyze

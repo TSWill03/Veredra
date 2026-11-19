@@ -1,6 +1,7 @@
 // Signature: dev.tswicolly03
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -810,7 +811,14 @@ class _LibraryPageState extends State<LibraryPage> {
       if (backupPath == null) {
         return;
       }
-      _showMessage('Backup salvo em $backupPath');
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.iOS ||
+              defaultTargetPlatform == TargetPlatform.android)) {
+        _showMessage(
+            'Escolha "Salvar em Arquivos" no compartilhamento para guardar o backup fora do app.');
+      } else {
+        _showMessage('Backup salvo em $backupPath');
+      }
     });
   }
 
