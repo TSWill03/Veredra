@@ -86,29 +86,17 @@ class BookService {
   }
 
   Future<bool> isBookReferenceAvailable(BookReference reference) async {
-    if (kIsWeb) {
-      if (reference.assetPaths.isEmpty) {
-        return false;
-      }
-      for (final String path in reference.assetPaths) {
-        if (_isWebStoredPath(path) &&
-            await _storage.exists(_storageKey(path))) {
-          return true;
-        }
-      }
-      return false;
-    }
-
     if (reference.usesDirectory) {
       return Directory(reference.directoryPath!).exists();
     }
-
+    if (reference.assetPaths.isEmpty) return false;
     for (final String path in reference.assetPaths) {
-      if (await File(path).exists()) {
-        return true;
-      }
+      final bool exists = _isWebStoredPath(path)
+          ? await _storage.exists(_storageKey(path))
+          : await File(path).exists();
+      if (!exists) return false;
     }
-    return false;
+    return true;
   }
 
   Future<Book?> importBook(ImportKind kind) async {
@@ -267,6 +255,11 @@ class BookService {
   }
 
   Future<Book> reopenBook(BookReference reference) {
+    if (reference.usesTextReader &&
+        reference.assetPaths.isNotEmpty &&
+        reference.assetPaths.every(_isWebStoredPath)) {
+      return _loadWebStoredTextBook(reference);
+    }
     if (kIsWeb) {
       if (reference.isPdf) {
         throw StateError('PDF ainda nao esta disponivel na versao Web.');
@@ -375,6 +368,7 @@ class BookService {
 
   Book _applyPreferredReference(Book book, BookReference reference) {
     return book.copyWith(
+      id: reference.syncedBookId ?? book.id,
       title: reference.title,
       reference: book.reference.copyWith(
         title: reference.title,
@@ -564,7 +558,8 @@ class BookService {
       format: reference.format,
       reference: reference.copyWith(assetPaths: existingPaths),
       filePaths: existingPaths,
-      id: _buildFileBookId(reference.format, existingPaths),
+      id: reference.syncedBookId ??
+          _buildFileBookId(reference.format, existingPaths),
     );
   }
 
