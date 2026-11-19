@@ -8,7 +8,7 @@ progresso e anotacoes que ja sincronizam separadamente.
 
 ## Pre-requisitos
 - PR da branch `feat/sync-book-content-storage-20261119` revisado, sem merge.
-- Migração `202611190001_book_content_sync.sql` revisada e aplicada em staging;
+- Migração `20261119165543_book_content_sync.sql` revisada e aplicada em staging;
   confirmar storage privado, MIME ZIP, policy por `auth.uid()`.
 - Duas contas isoladas e dois clientes distintos, apenas arquivos autorizados.
 - Backend com quota e tamanho permitidos; credenciais de staging (nao em Git).
@@ -46,3 +46,11 @@ Desabilitar consentimento para novos envios, restaurar build anterior,
 preservar os arquivos ja existentes no Storage e metadados. Nao executar
 exclusao destrutiva de dados de usuario no rollback; mantenha backup e
 procedimento separado e auditado para eventual limpeza.
+
+## Supabase hosted rollout — 2026-11-19
+
+The existing and reviewed `book_content_sync` migration was applied to the Veredra hosted Supabase project (ref `bfvbkypjyvyolguzzslt`) on 2026-11-19. The hosted migration version assigned by Supabase is `20261119165543`, so the versioned SQL filename in this branch is aligned with hosted migration history to prevent duplicate migration execution in later `db push` runs.
+
+Verified against hosted schema: private bucket retains `public=false`; `application/zip` is allowed by the bucket and `book_assets_mime_type_check`; user-prefixed authenticated INSERT policy permits `.zip`; SELECT/UPDATE/DELETE policies remain unchanged; index `book_assets_owner_book_idx` exists. Before/after metadata counts: 10 books, 0 assets, 0 blobs. Rollback-only SQL probe of book_assets ZIP insert succeeded without committed data. This is schema verification only, NOT a successful end-to-end authenticated Storage upload/download.
+
+Before enabling wide rollout, do a real upload/download via the app with a test account, verify user A cannot access B, quotas, conflicts, offline restore and upload error diagnostics. Backup of preflight policy definitions and cautious rollback procedure is stored outside Git on the authorized Destruking computer.

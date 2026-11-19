@@ -85,7 +85,7 @@ Transferencias de arquivos exibem contagem, progresso e aviso de conflito.
 ## Implantacao e limites conhecidos
 
 Antes de testar sincronizacao de arquivos, aplicar
-`supabase/migrations/202611190001_book_content_sync.sql` **apenas apos
+`supabase/migrations/20261119165543_book_content_sync.sql` **apenas apos
 revisao de schema/RLS**. Esta branch nao representa deploy.
 Verificar com duas contas e dois dispositivos; confirmar isolamento de bucket,
 limites de projeto, restore offline, interrupcao de rede e exclusao de conta.
