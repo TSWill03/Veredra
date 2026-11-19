@@ -53,6 +53,56 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   }
 
   @override
+  Future<List<RemoteSyncRecord>> pullProgress({
+    required String userId,
+  }) async {
+    if (_client.auth.currentUser?.id != userId) {
+      throw const SyncRemoteException(
+        'A sessao mudou durante a sincronizacao.',
+        sessionExpired: true,
+      );
+    }
+    try {
+      final List<dynamic> rows = await _client
+          .from('reading_progress')
+          .select('local_id,data,updated_at,deleted_at,version')
+          .eq('user_id', userId)
+          .order('updated_at');
+      final List<RemoteSyncRecord> result = <RemoteSyncRecord>[];
+      for (final dynamic raw in rows) {
+        if (raw is! Map<String, dynamic>) continue;
+        final String bookId = raw['local_id'] as String? ?? '';
+        if (bookId.isEmpty) continue;
+        result.add(
+          RemoteSyncRecord(
+            entityType: SyncEntityType.progress,
+            entityId: bookId,
+            payload: raw['data'] is Map<String, dynamic>
+                ? Map<String, dynamic>.from(raw['data'] as Map<String, dynamic>)
+                : <String, dynamic>{},
+            updatedAt: DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+            deletedAt: DateTime.tryParse(
+              raw['deleted_at'] as String? ?? '',
+            ),
+            version: (raw['version'] as num?)?.toInt() ?? 1,
+          ),
+        );
+      }
+      return result;
+    } on AuthException {
+      throw const SyncRemoteException(
+        'A sessao expirou. Entre novamente.',
+        sessionExpired: true,
+      );
+    } catch (_) {
+      throw const SyncRemoteException(
+        'Falha ao consultar o progresso remoto de leitura.',
+      );
+    }
+  }
+
+  @override
   Future<void> push(SyncOperation operation) async {
     final String table = _tables[operation.entityType]!;
     final Map<String, dynamic> data = Map<String, dynamic>.from(
@@ -73,10 +123,25 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
     };
 
     try {
-      await _client.from(table).upsert(
-            row,
-            onConflict: 'user_id,local_id',
-          );
+      if (operation.entityType == SyncEntityType.progress) {
+        // The server compares savedAt atomically: an old device cannot
+        // overwrite a newer reading checkpoint after our initial pull.
+        await _client.rpc(
+          'veredra_upsert_progress_if_newer',
+          params: <String, dynamic>{
+            'p_user_id': operation.userId,
+            'p_device_id': operation.deviceId,
+            'p_local_id': operation.entityId,
+            'p_remote_id': row['id'],
+            'p_data': data,
+          },
+        );
+      } else {
+        await _client.from(table).upsert(
+              row,
+              onConflict: 'user_id,local_id',
+            );
+      }
       await _client.from('sync_operations').upsert(
         <String, dynamic>{
           'id': operation.id,

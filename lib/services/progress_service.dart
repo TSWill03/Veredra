@@ -18,14 +18,19 @@ import 'storage/app_storage.dart';
 /// O app salva configuracoes e progresso em um arquivo por perfil.
 /// Isso facilita backup, exportacao e troca de usuario local sem misturar dados.
 class ProgressService {
+  ProgressService({AppStorage? storage})
+      : _storage = storage ?? createAppStorage(),
+        // Isolated test storage does not require platform legacy migration.
+        _preferences = storage == null ? SharedPreferencesAsync() : null;
+
   static const String _legacyThemeKey = 'app.themeMode';
   static const String _legacyFontSizeKey = 'app.fontSize';
   static const String _legacyReaderFontKey = 'app.readerFontPreset';
   static const String _legacyLastBookReferenceKey = 'app.lastBookReference';
   static const String _legacyLastBookPathKey = 'app.lastBookPath';
 
-  final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
-  final AppStorage _storage = createAppStorage();
+  final SharedPreferencesAsync? _preferences;
+  final AppStorage _storage;
 
   String _activeProfileId = 'principal';
   Future<void> _pendingOperation = Future<void>.value();
@@ -160,6 +165,40 @@ class ProgressService {
     });
   }
 
+  /// Update only this book under the same serialized lock as local scroll
+  /// saves. Replacing the whole state during a network pull can lose scrolling
+  /// checkpoints that arrive while the request is in flight.
+  Future<void> mergeRemoteProgress(
+    String bookId,
+    ReadingProgress remote,
+  ) async {
+    await _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      final String key = _encodeBookId(bookId);
+      final Map<String, dynamic>? raw = state.progresses[key];
+      final ReadingProgress? local =
+          raw == null ? null : ReadingProgress.fromJson(raw);
+      if (local != null &&
+          !remote.savedAt.toUtc().isAfter(local.savedAt.toUtc())) {
+        return;
+      }
+      final Map<String, Map<String, dynamic>> next =
+          Map<String, Map<String, dynamic>>.from(state.progresses);
+      next[key] = remote.toJson();
+      await _saveStateUnsafe(state.copyWith(progresses: next));
+    });
+  }
+
+  Future<void> removeProgress(String bookId) async {
+    await _runSerialized(() async {
+      final _ProgressState state = await _loadStateUnsafe();
+      final Map<String, Map<String, dynamic>> next =
+          Map<String, Map<String, dynamic>>.from(state.progresses)
+            ..remove(_encodeBookId(bookId));
+      await _saveStateUnsafe(state.copyWith(progresses: next));
+    });
+  }
+
   Future<Map<String, dynamic>> exportState() async {
     return _runSerialized(() async {
       final _ProgressState state = await _loadStateUnsafe();
@@ -265,10 +304,10 @@ class ProgressService {
 
   Future<_ProgressState> _migrateLegacyStateIfAvailable() async {
     final ThemeMode themeMode = await _loadLegacyThemeMode();
-    final double fontSize = await _preferences.getDouble(_legacyFontSizeKey) ??
+    final double fontSize = await _preferences?.getDouble(_legacyFontSizeKey) ??
         ReaderPreferences.defaults.fontSize;
     final ReaderFontPreset fontPreset = readerFontPresetFromId(
-      await _preferences.getString(_legacyReaderFontKey),
+      await _preferences?.getString(_legacyReaderFontKey),
     );
     final BookReference? lastBookReference =
         await _loadLegacyLastBookReference();
@@ -285,7 +324,7 @@ class ProgressService {
   }
 
   Future<ThemeMode> _loadLegacyThemeMode() async {
-    final String? raw = await _preferences.getString(_legacyThemeKey);
+    final String? raw = await _preferences?.getString(_legacyThemeKey);
     switch (raw) {
       case 'light':
         return ThemeMode.light;
@@ -298,14 +337,14 @@ class ProgressService {
 
   Future<BookReference?> _loadLegacyLastBookReference() async {
     final String? raw =
-        await _preferences.getString(_legacyLastBookReferenceKey);
+        await _preferences?.getString(_legacyLastBookReferenceKey);
     final BookReference? reference = BookReference.decode(raw);
     if (reference != null) {
       return reference;
     }
 
     final String? legacyPath =
-        await _preferences.getString(_legacyLastBookPathKey);
+        await _preferences?.getString(_legacyLastBookPathKey);
     if (legacyPath == null || legacyPath.isEmpty) {
       return null;
     }

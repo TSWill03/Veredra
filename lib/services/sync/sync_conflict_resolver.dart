@@ -2,24 +2,29 @@
 class SyncConflictResolver {
   const SyncConflictResolver();
 
+  /// A user's latest reading session wins, even when they revisit an
+  /// earlier chapter. Chapter index and percentage are not clocks.
   Map<String, dynamic> resolveProgress(
     Map<String, dynamic> local,
     Map<String, dynamic> remote,
   ) {
-    final int localChapter = (local['chapter_index'] as num?)?.toInt() ?? 0;
-    final int remoteChapter = (remote['chapter_index'] as num?)?.toInt() ?? 0;
-    if (localChapter != remoteChapter) {
-      return localChapter > remoteChapter ? local : remote;
-    }
+    final DateTime localSaved = progressSavedAt(local) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    final DateTime remoteSaved = progressSavedAt(remote) ??
+        DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+    if (localSaved.isAfter(remoteSaved)) return local;
+    if (remoteSaved.isAfter(localSaved)) return remote;
+    // An equal savedAt means the same reading checkpoint. The server record
+    // is authoritative for the tie and avoids an upload ping-pong.
+    return remote;
+  }
 
-    final double localProgress =
-        (local['chapter_progress'] as num?)?.toDouble() ?? 0;
-    final double remoteProgress =
-        (remote['chapter_progress'] as num?)?.toDouble() ?? 0;
-    if ((localProgress - remoteProgress).abs() > 0.0001) {
-      return localProgress > remoteProgress ? local : remote;
-    }
-    return resolveLastWrite(local, remote);
+  /// Interpret legacy local timestamps, modern UTC timestamps and the
+  /// historical fallback field without comparing how far someone has read.
+  static DateTime? progressSavedAt(Map<String, dynamic> data) {
+    final String? raw =
+        (data['savedAt'] ?? data['saved_at'] ?? data['updated_at']) as String?;
+    return raw == null ? null : DateTime.tryParse(raw)?.toUtc();
   }
 
   Map<String, dynamic> resolveLastWrite(

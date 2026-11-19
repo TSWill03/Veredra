@@ -5,7 +5,9 @@ import 'package:txt_webnovel_reader/services/sync/sync_conflict_resolver.dart';
 void main() {
   const SyncConflictResolver resolver = SyncConflictResolver();
 
-  test('progress conflict keeps the furthest reading position', () {
+  test(
+      'most recently saved position wins even when re-reading earlier chapters',
+      () {
     final Map<String, dynamic> winner = resolver.resolveProgress(
       <String, dynamic>{
         'chapter_index': 3,
@@ -18,7 +20,7 @@ void main() {
         'updated_at': '2026-07-13T12:00:00Z',
       },
     );
-    expect(winner['chapter_index'], 4);
+    expect(winner['chapter_index'], 3);
   });
 
   test('independent records merge by id using updated time', () {

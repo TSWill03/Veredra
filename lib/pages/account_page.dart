@@ -1,3 +1,4 @@
+import 'dart:async';
 // Signature: dev.tswicolly03
 import 'package:flutter/material.dart';
 
@@ -451,8 +452,33 @@ class _AccountPageState extends State<AccountPage> {
                         ? null
                         : sync.setAutomatic,
                 title: const Text('Sincronizacao automatica controlada'),
-                subtitle: const Text('Tambem pode ser executada manualmente.'),
+                subtitle: const Text(
+                  'Enquanto o app esta ativo, verifica alteracoes periodicamente; '
+                  'apos parar de rolar, tenta enviar em 5 segundos.',
+                ),
               ),
+              if (sync != null && sync.preferences.enabled)
+                ListTile(
+                  key: const Key('sync-interval-tile'),
+                  title: const Text('Intervalo periodico'),
+                  subtitle: const Text('Padrao: a cada 5 minutos.'),
+                  trailing: DropdownButton<int>(
+                    value: sync.preferences.syncIntervalMinutes,
+                    items: const <DropdownMenuItem<int>>[
+                      DropdownMenuItem(value: 1, child: Text('1 min')),
+                      DropdownMenuItem(value: 5, child: Text('5 min')),
+                      DropdownMenuItem(value: 10, child: Text('10 min')),
+                      DropdownMenuItem(value: 15, child: Text('15 min')),
+                    ],
+                    onChanged: sync.preferences.automatic && !account.busy
+                        ? (int? value) {
+                            if (value != null) {
+                              unawaited(sync.setSyncInterval(value));
+                            }
+                          }
+                        : null,
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: SizedBox(

@@ -37,7 +37,10 @@ interrompe a exclusao.
 8. filas corrompidas vao para quarentena, sem apagar a biblioteca.
 
 O dispositivo usa UUID aleatorio estavel, nao identificador fisico. Sync
-automatico e opcional a cada cinco minutos, alem da reconexao.
+automatico e opcional, por padrao a cada cinco minutos (configuravel em
+1, 5, 10 ou 15 min), alem de login, reconexao e retorno ao primeiro plano.
+O leitor salva o scroll local em debounce de 700 ms e tenta enviar apos 5 s
+de inatividade; ao sair/ocultar faz flush em melhor esforco.
 
 ## Sincronizacao de arquivos (beta)
 
@@ -71,10 +74,15 @@ grandes interrompidas reiniciam o pacote.
 
 - anotacoes/marcadores/destaques: merge por ID;
 - campos simples: maior `version`, depois `updated_at`;
-- progresso: maior capitulo e, dentro dele, maior progresso;
+- progresso: `savedAt` mais recente, mesmo se o usuario voltou capitulos;
+  checkpoints locais antigos nao sao reenviados ao abrir outro dispositivo;
+  RPC transacional e trigger protegem a atualizacao de posicoes obsoletas;
 - exclusoes: tombstone `deleted_at`, nao remocao silenciosa;
 - divergencias ambiguas: mantem dados locais e registra diagnostico sem
   conteudo do livro.
+
+Para arquitetura detalhada e checklist de testes entre Windows, Web e iOS,
+veja `docs/READING_CONTINUITY.md`.
 
 ## Estados de UI
 

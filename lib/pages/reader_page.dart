@@ -40,6 +40,8 @@ class ReaderPage extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.onFontSizeChanged,
     required this.onReaderFontPresetChanged,
+    this.onProgressSaved,
+    this.onFlushProgress,
   });
 
   final Book book;
@@ -55,6 +57,8 @@ class ReaderPage extends StatefulWidget {
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(double) onFontSizeChanged;
   final Future<void> Function(ReaderFontPreset) onReaderFontPresetChanged;
+  final void Function()? onProgressSaved;
+  final Future<void> Function()? onFlushProgress;
 
   @override
   State<ReaderPage> createState() => _ReaderPageState();
@@ -110,6 +114,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    // Capture before disposing the scroll controller. The previous code
+    // disposed it first, so a forced checkpoint could be lost on navigation.
+    final ReadingProgress? closingPosition = _captureCurrentProgress();
     WidgetsBinding.instance.removeObserver(this);
     _scrollController
       ..removeListener(_handleScroll)
@@ -119,7 +126,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       notifier.dispose();
     }
     _saveDebounce?.cancel();
-    unawaited(_persistProgress());
+    if (closingPosition != null) {
+      unawaited(_saveCapturedProgress(closingPosition, flushRemote: true));
+    }
     unawaited(_flushReadingSession());
     super.dispose();
   }
@@ -130,7 +139,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
-      unawaited(_persistProgress());
+      unawaited(_persistProgress(flushRemote: true));
       unawaited(_flushReadingSession());
     } else if (state == AppLifecycleState.resumed) {
       _resumeReadingSession();
@@ -481,14 +490,22 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _persistProgress() async {
+  Future<void> _persistProgress({bool flushRemote = false}) async {
     final ReadingProgress? progress = _captureCurrentProgress();
-    if (progress == null) {
-      return;
-    }
+    if (progress == null) return;
+    await _saveCapturedProgress(progress, flushRemote: flushRemote);
+  }
 
+  Future<void> _saveCapturedProgress(
+    ReadingProgress progress, {
+    bool flushRemote = false,
+  }) async {
     _currentChapterIndex = progress.chapterIndex;
     await widget.progressService.saveProgress(widget.book.id, progress);
+    widget.onProgressSaved?.call();
+    if (flushRemote) {
+      await widget.onFlushProgress?.call();
+    }
   }
 
   Future<void> _restoreSavedPosition(

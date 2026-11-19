@@ -125,6 +125,23 @@ class SyncQueue {
     await _save(operations);
   }
 
+  /// Drop an old checkpoint only after verifying that the server already
+  /// contains the same or a newer reading session for this book.
+  Future<void> discardEntity({
+    required String userId,
+    required SyncEntityType entityType,
+    required String entityId,
+  }) async {
+    final List<SyncOperation> operations = await load();
+    operations.removeWhere(
+      (SyncOperation operation) =>
+          operation.userId == userId &&
+          operation.entityType == entityType &&
+          operation.entityId == entityId,
+    );
+    await _save(operations);
+  }
+
   Future<void> clearForUser(String userId) async {
     final List<SyncOperation> operations = await load();
     operations.removeWhere(

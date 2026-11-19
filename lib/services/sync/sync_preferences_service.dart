@@ -8,6 +8,7 @@ class SyncPreferences {
     required this.enabled,
     required this.automatic,
     required this.syncBookFiles,
+    this.syncIntervalMinutes = 5,
     this.consentAt,
     this.filesConsentAt,
   });
@@ -16,12 +17,17 @@ class SyncPreferences {
       : enabled = false,
         automatic = true,
         syncBookFiles = false,
+        syncIntervalMinutes = 5,
         consentAt = null,
         filesConsentAt = null;
 
   final bool enabled;
   final bool automatic;
   final bool syncBookFiles;
+
+  /// Applies to background refresh while the app is active. A completed
+  /// scroll can also be flushed after five seconds of inactivity.
+  final int syncIntervalMinutes;
   final DateTime? consentAt;
 
   /// Separate, explicit opt-in for uploading copyrighted/private content.
@@ -31,6 +37,7 @@ class SyncPreferences {
     bool? enabled,
     bool? automatic,
     bool? syncBookFiles,
+    int? syncIntervalMinutes,
     DateTime? consentAt,
     DateTime? filesConsentAt,
   }) {
@@ -38,6 +45,7 @@ class SyncPreferences {
       enabled: enabled ?? this.enabled,
       automatic: automatic ?? this.automatic,
       syncBookFiles: syncBookFiles ?? this.syncBookFiles,
+      syncIntervalMinutes: syncIntervalMinutes ?? this.syncIntervalMinutes,
       consentAt: consentAt ?? this.consentAt,
       filesConsentAt: filesConsentAt ?? this.filesConsentAt,
     );
@@ -47,6 +55,7 @@ class SyncPreferences {
         'enabled': enabled,
         'automatic': automatic,
         'syncBookFiles': syncBookFiles,
+        'syncIntervalMinutes': syncIntervalMinutes,
         'consentAt': consentAt?.toUtc().toIso8601String(),
         'filesConsentAt': filesConsentAt?.toUtc().toIso8601String(),
       };
@@ -56,6 +65,10 @@ class SyncPreferences {
       enabled: json['enabled'] as bool? ?? false,
       automatic: json['automatic'] as bool? ?? true,
       syncBookFiles: json['syncBookFiles'] as bool? ?? false,
+      syncIntervalMinutes:
+          const <int>{1, 5, 10, 15}.contains(json['syncIntervalMinutes'])
+              ? json['syncIntervalMinutes'] as int
+              : 5,
       consentAt: DateTime.tryParse(json['consentAt'] as String? ?? ''),
       filesConsentAt:
           DateTime.tryParse(json['filesConsentAt'] as String? ?? ''),
@@ -110,6 +123,9 @@ class SyncPreferencesService {
   }
 
   Future<void> save(SyncPreferences preferences) {
+    if (!const <int>{1, 5, 10, 15}.contains(preferences.syncIntervalMinutes)) {
+      throw StateError('Intervalo automatico invalido.');
+    }
     if (preferences.syncBookFiles &&
         (!preferences.enabled || preferences.filesConsentAt == null)) {
       throw StateError(

@@ -10,6 +10,7 @@ import 'device_identity_service.dart';
 import 'local_sync_repository.dart';
 import 'network_monitor.dart';
 import 'remote_sync_gateway.dart';
+import 'sync_conflict_resolver.dart';
 import 'sync_models.dart';
 import 'sync_preferences_service.dart';
 import 'sync_queue.dart';
@@ -72,6 +73,56 @@ class SyncCoordinator extends ChangeNotifier {
   Future<void>? _activeSync;
   StreamSubscription<bool>? _networkSubscription;
   Timer? _automaticTimer;
+  Timer? _progressIdleTimer;
+
+  /// On an idle reader, the latest scroll checkpoint is uploaded quickly.
+  /// Continuous scrolling is still covered by the regular five-minute timer.
+  void notifyLocalProgressSaved() {
+    if (!preferences.enabled ||
+        !preferences.automatic ||
+        currentUserId() == null) {
+      return;
+    }
+    _progressIdleTimer?.cancel();
+    _progressIdleTimer = Timer(const Duration(seconds: 5), () {
+      unawaited(syncNow(stageSnapshot: true));
+    });
+  }
+
+  /// A reader waits for the latest cloud checkpoint before choosing its
+  /// initial scroll position. This does not re-upload the entire library.
+  Future<void> refreshReadingProgress() async {
+    final String? userId = currentUserId();
+    if (!preferences.enabled ||
+        !preferences.automatic ||
+        userId == null ||
+        remoteGateway == null ||
+        !await networkMonitor.isOnline()) {
+      return;
+    }
+    try {
+      final List<RemoteSyncRecord> records =
+          await remoteGateway!.pullProgress(userId: userId);
+      await localRepository.applyRemoteRecords(records);
+    } catch (error, stackTrace) {
+      await _diagnostics.record(
+        DiagnosticCategory.synchronization,
+        error,
+        stackTrace,
+      );
+      // A cloud outage must never prevent reading the cached local book.
+    }
+  }
+
+  Future<void> flushReadingProgress() {
+    _progressIdleTimer?.cancel();
+    if (!preferences.enabled ||
+        !preferences.automatic ||
+        currentUserId() == null) {
+      return Future<void>.value();
+    }
+    return syncNow(stageSnapshot: true);
+  }
 
   Future<void> initialize() async {
     preferences = await preferencesService.load();
@@ -111,6 +162,16 @@ class SyncCoordinator extends ChangeNotifier {
 
   Future<void> setAutomatic(bool enabled) async {
     preferences = preferences.copyWith(automatic: enabled);
+    await preferencesService.save(preferences);
+    _scheduleAutomaticSync();
+    notifyListeners();
+  }
+
+  Future<void> setSyncInterval(int minutes) async {
+    if (!const <int>{1, 5, 10, 15}.contains(minutes)) {
+      throw StateError('Intervalo automatico invalido.');
+    }
+    preferences = preferences.copyWith(syncIntervalMinutes: minutes);
     await preferencesService.save(preferences);
     _scheduleAutomaticSync();
     notifyListeners();
@@ -159,9 +220,32 @@ class SyncCoordinator extends ChangeNotifier {
     notifyListeners();
     final String deviceId = await deviceIdentityService.loadOrCreateId();
 
-    if (stageSnapshot) {
-      for (final LocalSyncSnapshot snapshot
-          in await localRepository.createSnapshot()) {
+    // Keep existing offline-first semantics for metadata. Progress checkpoints
+    // are deliberately staged AFTER fetching remote state on a live connection:
+    // otherwise an untouched Web session can overwrite a newer desktop read.
+    final List<LocalSyncSnapshot> snapshots = stageSnapshot
+        ? await localRepository.createSnapshot()
+        : <LocalSyncSnapshot>[];
+    for (final LocalSyncSnapshot snapshot in snapshots) {
+      if (snapshot.entityType == SyncEntityType.progress) continue;
+      await queue.enqueue(
+        userId: userId,
+        deviceId: deviceId,
+        entityType: snapshot.entityType,
+        entityId: snapshot.entityId,
+        payload: <String, dynamic>{'data': snapshot.data},
+      );
+    }
+    pendingCount = (await queue.load()).length;
+    activeStep = 'Verificando conexao';
+    notifyListeners();
+
+    if (!await networkMonitor.isOnline()) {
+      // Store the user's most recent local checkpoint for a later reconnect.
+      for (final LocalSyncSnapshot snapshot in snapshots) {
+        if (snapshot.entityType != SyncEntityType.progress) {
+          continue;
+        }
         await queue.enqueue(
           userId: userId,
           deviceId: deviceId,
@@ -170,12 +254,7 @@ class SyncCoordinator extends ChangeNotifier {
           payload: <String, dynamic>{'data': snapshot.data},
         );
       }
-    }
-    pendingCount = (await queue.load()).length;
-    activeStep = 'Verificando conexao';
-    notifyListeners();
-
-    if (!await networkMonitor.isOnline()) {
+      pendingCount = (await queue.load()).length;
       activeStep = null;
       phase = SyncPhase.offline;
       notifyListeners();
@@ -190,6 +269,104 @@ class SyncCoordinator extends ChangeNotifier {
         name: 'Veredra ${deviceIdentityService.platformLabel}',
         platform: deviceIdentityService.platformLabel,
       );
+      activeStep = 'Comparando posicoes de leitura';
+      notifyListeners();
+      final List<RemoteSyncRecord> remoteProgresses =
+          await remoteGateway!.pullProgress(userId: userId);
+      final Map<String, RemoteSyncRecord> remoteByBook =
+          <String, RemoteSyncRecord>{
+        for (final RemoteSyncRecord record in remoteProgresses)
+          record.entityId: record,
+      };
+      final Map<String, LocalSyncSnapshot> localByBook =
+          <String, LocalSyncSnapshot>{
+        for (final LocalSyncSnapshot snapshot in snapshots)
+          if (snapshot.entityType == SyncEntityType.progress)
+            snapshot.entityId: snapshot,
+      };
+
+      // Remote checkpoints are applied first, only if newer. An earlier
+      // chapter saved later is a valid "resume here" position.
+      for (final RemoteSyncRecord remote in remoteProgresses) {
+        if (remote.deletedAt != null) {
+          continue;
+        }
+        final LocalSyncSnapshot? local = localByBook[remote.entityId];
+        final DateTime? localTime = local == null
+            ? null
+            : SyncConflictResolver.progressSavedAt(local.data);
+        final DateTime? remoteTime =
+            SyncConflictResolver.progressSavedAt(remote.payload);
+        if (local == null ||
+            remoteTime != null &&
+                (localTime == null || remoteTime.isAfter(localTime))) {
+          await localRepository.applyRemoteRecords(<RemoteSyncRecord>[remote]);
+        }
+        if (local == null ||
+            remoteTime != null &&
+                (localTime == null || !localTime.isAfter(remoteTime))) {
+          await queue.discardEntity(
+            userId: userId,
+            entityType: SyncEntityType.progress,
+            entityId: remote.entityId,
+          );
+        }
+      }
+
+      // Old queue records may have survived an offline period or a prior
+      // release; drop them when the cloud already owns a newer checkpoint.
+      final List<SyncOperation> pending = await queue.load();
+      for (final SyncOperation operation in pending) {
+        if (operation.userId != userId ||
+            operation.entityType != SyncEntityType.progress) {
+          continue;
+        }
+        final RemoteSyncRecord? remote = remoteByBook[operation.entityId];
+        if (remote == null || remote.deletedAt != null) {
+          continue;
+        }
+        final Map<String, dynamic> data =
+            operation.payload['data'] is Map<String, dynamic>
+                ? Map<String, dynamic>.from(
+                    operation.payload['data'] as Map<String, dynamic>)
+                : <String, dynamic>{};
+        final DateTime? queuedTime = SyncConflictResolver.progressSavedAt(data);
+        final DateTime? serverTime =
+            SyncConflictResolver.progressSavedAt(remote.payload);
+        if (serverTime != null &&
+            (queuedTime == null || !queuedTime.isAfter(serverTime))) {
+          await queue.discardEntity(
+            userId: userId,
+            entityType: SyncEntityType.progress,
+            entityId: operation.entityId,
+          );
+        }
+      }
+
+      for (final LocalSyncSnapshot snapshot in snapshots) {
+        if (snapshot.entityType != SyncEntityType.progress) {
+          continue;
+        }
+        final RemoteSyncRecord? remote = remoteByBook[snapshot.entityId];
+        final DateTime? localTime =
+            SyncConflictResolver.progressSavedAt(snapshot.data);
+        final DateTime? remoteTime = remote == null
+            ? null
+            : SyncConflictResolver.progressSavedAt(remote.payload);
+        if (remote == null ||
+            remote.deletedAt != null ||
+            (localTime != null &&
+                (remoteTime == null || localTime.isAfter(remoteTime)))) {
+          await queue.enqueue(
+            userId: userId,
+            deviceId: deviceId,
+            entityType: snapshot.entityType,
+            entityId: snapshot.entityId,
+            payload: <String, dynamic>{'data': snapshot.data},
+          );
+        }
+      }
+
       final List<SyncOperation> operations = await queue.due();
       totalOperations = operations.length;
       activeStep = operations.isEmpty
@@ -228,6 +405,11 @@ class SyncCoordinator extends ChangeNotifier {
         activeStep = 'Aplicando dados de leitura';
         notifyListeners();
         await localRepository.applyRemoteRecords(records);
+        // The upload can race with another device. A final pull reconciles
+        // the result of the server-side newer-only progress upsert.
+        final List<RemoteSyncRecord> latestProgress =
+            await remoteGateway!.pullProgress(userId: userId);
+        await localRepository.applyRemoteRecords(latestProgress);
         lastSyncAt = DateTime.now().toUtc();
         await _storage.writeString(
           _lastSyncKey,
@@ -290,8 +472,10 @@ class SyncCoordinator extends ChangeNotifier {
 
   void _scheduleAutomaticSync() {
     _automaticTimer?.cancel();
+    _progressIdleTimer?.cancel();
     if (preferences.enabled && preferences.automatic) {
-      _automaticTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _automaticTimer = Timer.periodic(
+          Duration(minutes: preferences.syncIntervalMinutes), (_) {
         unawaited(syncNow(stageSnapshot: true));
       });
     }
@@ -302,6 +486,7 @@ class SyncCoordinator extends ChangeNotifier {
   @override
   void dispose() {
     _automaticTimer?.cancel();
+    _progressIdleTimer?.cancel();
     unawaited(_networkSubscription?.cancel());
     super.dispose();
   }

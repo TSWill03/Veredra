@@ -11,7 +11,6 @@ import '../../models/library_entry.dart';
 import '../../models/reader_annotation.dart';
 import '../../models/reader_bookmark.dart';
 import '../../models/reading_progress.dart';
-import 'sync_conflict_resolver.dart';
 import 'sync_models.dart';
 
 class LocalSyncSnapshot {
@@ -41,8 +40,7 @@ class LocalSyncRepository implements LocalSyncDataSource {
     required this.bookmarkService,
     required this.annotationService,
     required this.readingStatsService,
-    SyncConflictResolver conflictResolver = const SyncConflictResolver(),
-  }) : _conflictResolver = conflictResolver;
+  });
 
   final String profileId;
   final ProfileService profileService;
@@ -51,7 +49,6 @@ class LocalSyncRepository implements LocalSyncDataSource {
   final BookmarkService bookmarkService;
   final AnnotationService annotationService;
   final ReadingStatsService readingStatsService;
-  final SyncConflictResolver _conflictResolver;
 
   @override
   Future<List<LocalSyncSnapshot>> createSnapshot() async {
@@ -276,44 +273,20 @@ class LocalSyncRepository implements LocalSyncDataSource {
   }
 
   Future<void> _applyProgress(RemoteSyncRecord remote) async {
-    final Map<String, dynamic> state = await progressService.exportState();
-    final Map<String, dynamic> progresses = state['progresses']
-            is Map<String, dynamic>
-        ? Map<String, dynamic>.from(state['progresses'] as Map<String, dynamic>)
-        : <String, dynamic>{};
-    final String key = Uri.encodeComponent(remote.entityId);
     if (remote.deletedAt != null) {
-      progresses.remove(key);
-    } else {
-      final Map<String, dynamic> remoteProgress =
-          Map<String, dynamic>.from(remote.payload)
-            ..['updated_at'] = remote.updatedAt.toUtc().toIso8601String()
-            ..['version'] = remote.version;
-      final Map<String, dynamic>? localProgress =
-          progresses[key] is Map<String, dynamic>
-              ? Map<String, dynamic>.from(
-                  progresses[key] as Map<String, dynamic>,
-                )
-              : null;
-      final Map<String, dynamic> winner = localProgress == null
-          ? remoteProgress
-          : _conflictResolver.resolveProgress(
-              <String, dynamic>{
-                ...localProgress,
-                'chapter_index': localProgress['chapterIndex'],
-                'chapter_progress': localProgress['chapterProgress'],
-                'updated_at': localProgress['savedAt'],
-              },
-              <String, dynamic>{
-                ...remoteProgress,
-                'chapter_index': remoteProgress['chapterIndex'],
-                'chapter_progress': remoteProgress['chapterProgress'],
-              },
-            );
-      progresses[key] = ReadingProgress.fromJson(winner).toJson();
+      await progressService.removeProgress(remote.entityId);
+      return;
     }
-    state['progresses'] = progresses;
-    await progressService.importState(state);
+    // Malformed legacy rows must not produce a current-time fallback that
+    // silently replaces a valid local reading checkpoint.
+    final String? savedAt = remote.payload['savedAt'] as String?;
+    if (savedAt == null || DateTime.tryParse(savedAt) == null) {
+      return;
+    }
+    await progressService.mergeRemoteProgress(
+      remote.entityId,
+      ReadingProgress.fromJson(remote.payload),
+    );
   }
 
   Future<void> _applyBookmark(RemoteSyncRecord remote) async {

@@ -152,6 +152,138 @@ void main() {
     expect(coordinator.phase, SyncPhase.synchronized);
   });
 
+  test('a stale Web checkpoint cannot overwrite a newer desktop position',
+      () async {
+    final DateTime recent = DateTime.utc(2026, 11, 19, 18, 0);
+    final FakeRemoteSyncGateway remote = FakeRemoteSyncGateway();
+    remote.records['progress:book-a'] = RemoteSyncRecord(
+      entityType: SyncEntityType.progress,
+      entityId: 'book-a',
+      payload: <String, dynamic>{
+        'bookId': 'book-a',
+        'chapterIndex': 10,
+        'chapterProgress': 0.75,
+        'savedAt': recent.toIso8601String(),
+      },
+      updatedAt: recent,
+      version: 3,
+    );
+    final FakeLocalSyncDataSource oldWeb = FakeLocalSyncDataSource(
+      snapshots: <LocalSyncSnapshot>[
+        LocalSyncSnapshot(
+          entityType: SyncEntityType.progress,
+          entityId: 'book-a',
+          data: <String, dynamic>{
+            'bookId': 'book-a',
+            'chapterIndex': 1,
+            'chapterProgress': 0.25,
+            'savedAt':
+                recent.subtract(const Duration(hours: 2)).toIso8601String(),
+          },
+        ),
+      ],
+    );
+    final SyncCoordinator session = await _coordinator(
+      storage: MemoryAppStorage(),
+      network: FakeNetworkMonitor(true),
+      remote: remote,
+      local: oldWeb,
+    );
+    addTearDown(session.dispose);
+    await session.syncNow();
+    expect(remote.records['progress:book-a']!.payload['chapterIndex'], 10);
+    expect(oldWeb.applied, isNotEmpty);
+    expect(session.pendingCount, 0);
+  });
+
+  test('new session saved while re-reading an earlier chapter is uploaded',
+      () async {
+    final DateTime recent = DateTime.utc(2026, 11, 19, 18, 0);
+    final FakeRemoteSyncGateway remote = FakeRemoteSyncGateway();
+    remote.records['progress:book-a'] = RemoteSyncRecord(
+      entityType: SyncEntityType.progress,
+      entityId: 'book-a',
+      payload: <String, dynamic>{
+        'bookId': 'book-a',
+        'chapterIndex': 15,
+        'chapterProgress': 0.9,
+        'savedAt':
+            recent.subtract(const Duration(minutes: 10)).toIso8601String(),
+      },
+      updatedAt: recent.subtract(const Duration(minutes: 5)),
+      version: 1,
+    );
+    final FakeLocalSyncDataSource reader = FakeLocalSyncDataSource(
+      snapshots: <LocalSyncSnapshot>[
+        LocalSyncSnapshot(
+          entityType: SyncEntityType.progress,
+          entityId: 'book-a',
+          data: <String, dynamic>{
+            'bookId': 'book-a',
+            'chapterIndex': 2,
+            'chapterProgress': 0.2,
+            'savedAt': recent.toIso8601String(),
+          },
+        ),
+      ],
+    );
+    final SyncCoordinator session = await _coordinator(
+      storage: MemoryAppStorage(),
+      network: FakeNetworkMonitor(true),
+      remote: remote,
+      local: reader,
+    );
+    addTearDown(session.dispose);
+    await session.syncNow();
+    expect(remote.records['progress:book-a']!.payload['chapterIndex'], 2);
+    expect(session.pendingCount, 0);
+  });
+
+  test('queued offline checkpoint is discarded when cloud became newer',
+      () async {
+    final DateTime recent = DateTime.utc(2026, 11, 19, 18, 0);
+    final FakeRemoteSyncGateway remote = FakeRemoteSyncGateway();
+    final FakeNetworkMonitor network = FakeNetworkMonitor(false);
+    final FakeLocalSyncDataSource oldReader = FakeLocalSyncDataSource(
+      snapshots: <LocalSyncSnapshot>[
+        LocalSyncSnapshot(
+          entityType: SyncEntityType.progress,
+          entityId: 'book-a',
+          data: <String, dynamic>{
+            'bookId': 'book-a',
+            'chapterIndex': 2,
+            'savedAt':
+                recent.subtract(const Duration(hours: 1)).toIso8601String(),
+          },
+        ),
+      ],
+    );
+    final SyncCoordinator session = await _coordinator(
+      storage: MemoryAppStorage(),
+      network: network,
+      remote: remote,
+      local: oldReader,
+    );
+    addTearDown(session.dispose);
+    await session.syncNow();
+    expect(session.pendingCount, 1);
+    remote.records['progress:book-a'] = RemoteSyncRecord(
+      entityType: SyncEntityType.progress,
+      entityId: 'book-a',
+      payload: <String, dynamic>{
+        'bookId': 'book-a',
+        'chapterIndex': 7,
+        'savedAt': recent.toIso8601String(),
+      },
+      updatedAt: recent,
+      version: 2,
+    );
+    network.online = true;
+    await session.syncNow();
+    expect(remote.records['progress:book-a']!.payload['chapterIndex'], 7);
+    expect(session.pendingCount, 0);
+  });
+
   test('expired token changes state without deleting local queue', () async {
     final MemoryAppStorage storage = MemoryAppStorage();
     final FakeRemoteSyncGateway remote = FakeRemoteSyncGateway()..expire = true;
@@ -248,6 +380,19 @@ class FakeRemoteSyncGateway implements RemoteSyncGateway {
           (RemoteSyncRecord record) =>
               since == null || record.updatedAt.isAfter(since),
         )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<RemoteSyncRecord>> pullProgress({
+    required String userId,
+  }) async {
+    if (expire) {
+      throw const SyncRemoteException('Sessao expirada.', sessionExpired: true);
+    }
+    return records.values
+        .where(
+            (RemoteSyncRecord row) => row.entityType == SyncEntityType.progress)
         .toList(growable: false);
   }
 

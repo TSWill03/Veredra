@@ -14,11 +14,15 @@ class PdfReaderPage extends StatefulWidget {
     required this.book,
     required this.progressService,
     required this.onThemeModeChanged,
+    this.onProgressSaved,
+    this.onFlushProgress,
   });
 
   final Book book;
   final ProgressService progressService;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
+  final void Function()? onProgressSaved;
+  final Future<void> Function()? onFlushProgress;
 
   @override
   State<PdfReaderPage> createState() => _PdfReaderPageState();
@@ -49,7 +53,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
-    unawaited(_persistProgress());
+    unawaited(_persistProgress(flushRemote: true));
     super.dispose();
   }
 
@@ -59,7 +63,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
-      unawaited(_persistProgress());
+      unawaited(_persistProgress(flushRemote: true));
     }
   }
 
@@ -104,7 +108,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     });
   }
 
-  Future<void> _persistProgress() async {
+  Future<void> _persistProgress({bool flushRemote = false}) async {
     await widget.progressService.saveProgress(
       widget.book.id,
       ReadingProgress(
@@ -114,6 +118,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         savedAt: DateTime.now(),
       ),
     );
+    widget.onProgressSaved?.call();
+    if (flushRemote) {
+      await widget.onFlushProgress?.call();
+    }
   }
 
   Future<void> _goToPage(int pageNumber) async {

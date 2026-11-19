@@ -97,6 +97,7 @@ class _LibraryPageState extends State<LibraryPage> {
   final TextEditingController _searchController = TextEditingController();
 
   bool _isBusy = false;
+  DateTime? _lastObservedSyncAt;
   bool _isLoadingEntries = true;
   bool _lastBookAvailable = false;
   List<LibraryEntry> _entries = const <LibraryEntry>[];
@@ -109,6 +110,8 @@ class _LibraryPageState extends State<LibraryPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
+    widget.syncCoordinator?.addListener(_handleSyncChanged);
+    _lastObservedSyncAt = widget.syncCoordinator?.lastSyncAt;
     _refreshLibrary();
     _refreshLastBookAvailability();
   }
@@ -116,6 +119,12 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void didUpdateWidget(covariant LibraryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.syncCoordinator != widget.syncCoordinator) {
+      oldWidget.syncCoordinator?.removeListener(_handleSyncChanged);
+      widget.syncCoordinator?.addListener(_handleSyncChanged);
+      _lastObservedSyncAt = widget.syncCoordinator?.lastSyncAt;
+      _refreshLibrary();
+    }
     if (oldWidget.lastBookReference != widget.lastBookReference ||
         oldWidget.currentProfile.id != widget.currentProfile.id) {
       _refreshLastBookAvailability();
@@ -125,10 +134,20 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   void dispose() {
+    widget.syncCoordinator?.removeListener(_handleSyncChanged);
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
     super.dispose();
+  }
+
+  void _handleSyncChanged() {
+    final DateTime? synchronizedAt = widget.syncCoordinator?.lastSyncAt;
+    if (synchronizedAt != null && synchronizedAt != _lastObservedSyncAt) {
+      _lastObservedSyncAt = synchronizedAt;
+      unawaited(_refreshLibrary());
+      unawaited(_refreshLastBookAvailability());
+    }
   }
 
   void _handleSearchChanged() {
@@ -278,6 +297,9 @@ class _LibraryPageState extends State<LibraryPage> {
     int? initialChapterIndex,
     double? initialChapterProgress,
   }) async {
+    // Pull a current checkpoint before the reader loads its initial position.
+    // If offline, the cached position remains available without delay.
+    await widget.syncCoordinator?.refreshReadingProgress();
     await widget.progressService.saveLastBookReference(book.reference);
     await widget.onLastBookChanged(book.reference);
     await widget.libraryService.upsertBook(book, markOpened: true);
@@ -302,11 +324,15 @@ class _LibraryPageState extends State<LibraryPage> {
             onThemeModeChanged: widget.onThemeModeChanged,
             onFontSizeChanged: widget.onFontSizeChanged,
             onReaderFontPresetChanged: widget.onReaderFontPresetChanged,
+            onProgressSaved: widget.syncCoordinator?.notifyLocalProgressSaved,
+            onFlushProgress: widget.syncCoordinator?.flushReadingProgress,
           )
         : PdfReaderPage(
             book: book,
             progressService: widget.progressService,
             onThemeModeChanged: widget.onThemeModeChanged,
+            onProgressSaved: widget.syncCoordinator?.notifyLocalProgressSaved,
+            onFlushProgress: widget.syncCoordinator?.flushReadingProgress,
           );
 
     await Navigator.of(context).push(
