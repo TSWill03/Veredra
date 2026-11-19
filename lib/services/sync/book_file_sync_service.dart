@@ -384,7 +384,7 @@ class BookFileSyncService {
         .trim();
     return cleaned.isEmpty
         ? 'Capitulo'
-        : cleaned.substring(0, cleaned.length.clamp(0, 72));
+        : cleaned.substring(0, cleaned.length < 72 ? cleaned.length : 72);
   }
 
   Future<Uint8List?> _readAssetBytes(String path) async {
