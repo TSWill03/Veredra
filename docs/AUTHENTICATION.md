@@ -82,3 +82,26 @@ Mocks, UI, RLS e contratos nao substituem o teste hospedado. Envio de e-mail e
 sessao entre dois dispositivos so podem ser aprovados com uma conta exclusiva
 de staging. O callback Google esta deliberadamente fora do escopo enquanto a
 feature flag permanecer desativada.
+
+## Integracao Google OAuth por navegador (2026-11-19)
+
+Os arquivos de clientes OAuth do Google Cloud foram validados localmente para o
+projeto `veredra`. **Nao copiar `Web.json`, `Desktop.json`, `Android.json` nem
+`IOS.plist` para o repositorio ou para os assets de release.** O Web Client
+Secret pertence exclusivamente a configuracao Google do Supabase hospedado.
+
+- Callback registrado no Google Cloud Web: `https://bfvbkypjyvyolguzzslt.supabase.co/auth/v1/callback`.
+- Origem Web registrada: `https://wicolly.com.br`.
+- Supabase Site URL: `https://wicolly.com.br/veredra/`.
+- Redirects pos-login: `https://wicolly.com.br/veredra/` e `veredra://auth-callback/`.
+- Android: intent filter do esquema `veredra` ja presente no projeto.
+- iOS: `CFBundleURLTypes` declara `veredra` para o retorno ao app via PKCE.
+- Windows/macOS/Linux portateis: Google OAuth fica oculto ate existir registro
+  e validacao de um manipulador de URI confiavel. Login por senha permanece.
+
+O Veredra usa `signInWithOAuth` do Supabase via navegador, nao o SDK
+`google_sign_in` nativo. Portanto `REVERSED_CLIENT_ID` do plist do Google
+nao e necessario neste fluxo. Nunca versionar o Client Secret do Google ou
+um Supabase PAT. Mantenha `ENABLE_GOOGLE_AUTH=false` no build de producao ate
+validar o provedor no backend, retorno PKCE, cancelamento, sessao e E2E em
+Web, Android e iOS. Testar em dispositivos fisicos antes da liberacao.

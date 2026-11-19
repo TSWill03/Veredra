@@ -19,7 +19,11 @@ class SupabaseAuthGateway implements AuthGateway {
   bool get isConfigured => true;
 
   @override
-  bool get isGoogleAuthEnabled => _googleAuthEnabled;
+  bool get isGoogleAuthEnabled =>
+      _googleAuthEnabled &&
+      (kIsWeb ||
+          defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   AuthUser? get currentUser => _mapUser(_client.auth.currentUser);
@@ -102,7 +106,7 @@ class SupabaseAuthGateway implements AuthGateway {
 
   @override
   Future<AuthActionResult> signInWithGoogle() async {
-    if (!_googleAuthEnabled) {
+    if (!isGoogleAuthEnabled) {
       throw StateError(
         'A entrada com Google esta desativada nesta entrega.',
       );
