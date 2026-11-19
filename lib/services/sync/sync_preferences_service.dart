@@ -23,6 +23,7 @@ class SyncPreferences {
   final bool automatic;
   final bool syncBookFiles;
   final DateTime? consentAt;
+
   /// Separate, explicit opt-in for uploading copyrighted/private content.
   final DateTime? filesConsentAt;
 
@@ -111,7 +112,8 @@ class SyncPreferencesService {
   Future<void> save(SyncPreferences preferences) {
     if (preferences.syncBookFiles &&
         (!preferences.enabled || preferences.filesConsentAt == null)) {
-      throw StateError('A sincronizacao de arquivos exige consentimento separado.');
+      throw StateError(
+          'A sincronizacao de arquivos exige consentimento separado.');
     }
     return _storage.writeString(_key, jsonEncode(preferences.toJson()));
   }

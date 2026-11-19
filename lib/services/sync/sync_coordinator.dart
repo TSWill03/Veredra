@@ -236,7 +236,8 @@ class SyncCoordinator extends ChangeNotifier {
         if (preferences.syncBookFiles && bookFileSyncService != null) {
           activeStep = 'Sincronizando livros';
           notifyListeners();
-          final BookFileSyncReport report = await bookFileSyncService!.synchronize(
+          final BookFileSyncReport report =
+              await bookFileSyncService!.synchronize(
             userId: userId,
             deviceId: deviceId,
             onProgress: (String stage, int done, int total) {

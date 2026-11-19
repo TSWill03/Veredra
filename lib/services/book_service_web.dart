@@ -37,12 +37,14 @@ class ImportOption {
 }
 
 class BookService {
+  BookService({AppStorage? storage}) : _storage = storage ?? createAppStorage();
+
   static const int _maxCachedChapterContents = 24;
   static const String _webStoredPrefix = 'veredra://';
 
   final LinkedHashMap<String, String> _chapterContentCache =
       LinkedHashMap<String, String>();
-  final AppStorage _storage = createAppStorage();
+  final AppStorage _storage;
   String _activeProfileId = 'principal';
 
   void configureProfile(String profileId) {
@@ -79,7 +81,8 @@ class BookService {
     }
 
     for (final String path in reference.assetPaths) {
-      if (!_isWebStoredPath(path) || !await _storage.exists(_storageKey(path))) {
+      if (!_isWebStoredPath(path) ||
+          !await _storage.exists(_storageKey(path))) {
         return false;
       }
     }

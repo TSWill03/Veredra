@@ -46,8 +46,7 @@ void main() {
     expect(metadataOnly.syncBookFiles, isFalse);
     expect(metadataOnly.filesConsentAt, isNull);
 
-    final SyncPreferences filesEnabled =
-        await service.setSyncBookFiles(true);
+    final SyncPreferences filesEnabled = await service.setSyncBookFiles(true);
     expect(filesEnabled.syncBookFiles, isTrue);
     expect(filesEnabled.filesConsentAt, isNotNull);
 
@@ -64,14 +63,15 @@ void main() {
     expect(metadataDisabled.enabled, isFalse);
   });
 
-  test('file consent cannot be restored from an unconsented preference', () async {
+  test('file consent cannot be restored from an unconsented preference',
+      () async {
     final MemoryAppStorage storage = MemoryAppStorage();
     final SyncPreferencesService service = SyncPreferencesService(
       profileId: 'principal',
       storage: storage,
     );
     expect(
-      service.save(const SyncPreferences(
+      () => service.save(const SyncPreferences(
         enabled: false,
         automatic: true,
         syncBookFiles: true,

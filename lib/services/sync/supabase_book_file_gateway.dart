@@ -62,13 +62,13 @@ class SupabaseBookFileGateway implements BookFileRemoteGateway {
     final String path = '$userId/$hashedId/$checksum.zip';
     try {
       await _client.storage.from(bucket).uploadBinary(
-        path,
-        bytes,
-        fileOptions: const FileOptions(
-          contentType: 'application/zip',
-          upsert: true,
-        ),
-      );
+            path,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'application/zip',
+              upsert: true,
+            ),
+          );
       await _client.from('book_assets').upsert(
         <String, dynamic>{
           'user_id': userId,
@@ -101,8 +101,7 @@ class SupabaseBookFileGateway implements BookFileRemoteGateway {
   @override
   Future<Uint8List> download(RemoteBookAsset asset) async {
     final String? currentId = _client.auth.currentUser?.id;
-    if (currentId == null ||
-        !asset.storagePath.startsWith('$currentId/')) {
+    if (currentId == null || !asset.storagePath.startsWith('$currentId/')) {
       throw const SyncRemoteException('Sessao invalida para baixar o livro.',
           sessionExpired: true);
     }

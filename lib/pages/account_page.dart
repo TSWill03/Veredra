@@ -534,8 +534,7 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  Future<void> _setBookFileConsent(
-      SyncCoordinator sync, bool enabled) async {
+  Future<void> _setBookFileConsent(SyncCoordinator sync, bool enabled) async {
     if (!enabled) {
       await sync.setSyncBookFiles(false);
       return;

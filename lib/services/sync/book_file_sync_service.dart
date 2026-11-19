@@ -1,6 +1,5 @@
 // Signature: dev.tswicolly03
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -215,9 +214,10 @@ class BookFileSyncService {
         addFile(name, bytes);
         chapterIndex.add(<String, String>{
           'path': name,
-          'title': originalTitles != null && originalTitles.length == chapters.length
-              ? originalTitles[i]
-              : chapters[i].title,
+          'title':
+              originalTitles != null && originalTitles.length == chapters.length
+                  ? originalTitles[i]
+                  : chapters[i].title,
         });
       }
       manifest['chapters'] = chapterIndex;
@@ -226,10 +226,12 @@ class BookFileSyncService {
     final String? coverPath = entry.reference.coverPath;
     if (coverPath != null && coverPath.isNotEmpty) {
       final Uint8List? cover = await _readAssetBytes(coverPath);
-      if (cover != null && cover.isNotEmpty && cover.length <= 20 * 1024 * 1024) {
+      if (cover != null &&
+          cover.isNotEmpty &&
+          cover.length <= 20 * 1024 * 1024) {
         // Cover files are normalized to .png on download; non-PNG source
         // bytes are kept in their native format with an explicit extension.
-        final String suffix = _imageSuffix(cover);
+        final String? suffix = _imageSuffix(cover);
         if (suffix != null) {
           final String name = 'cover.$suffix';
           addFile(name, cover);
@@ -267,8 +269,7 @@ class BookFileSyncService {
     if (manifestFile == null || manifestFile.size > 2 * 1024 * 1024) {
       throw StateError('Manifesto ausente ou invalido.');
     }
-    final dynamic decoded =
-        jsonDecode(utf8.decode(_contents(manifestFile)));
+    final dynamic decoded = jsonDecode(utf8.decode(_contents(manifestFile)));
     if (decoded is! Map<String, dynamic> ||
         decoded['schema'] != 1 ||
         decoded['bookId'] != entry.id ||
@@ -284,8 +285,8 @@ class BookFileSyncService {
       if (pdf != 'book.pdf' || files[pdf] == null) {
         throw StateError('PDF ausente do pacote.');
       }
-      paths.add(await storeSyncedBinary('$root/book.pdf',
-          Uint8List.fromList(_contents(files[pdf]!))));
+      paths.add(await storeSyncedBinary(
+          '$root/book.pdf', Uint8List.fromList(_contents(files[pdf]!))));
     } else {
       final dynamic rawChapters = decoded['chapters'];
       if (rawChapters is! List<dynamic> ||
@@ -295,8 +296,7 @@ class BookFileSyncService {
       }
       for (int i = 0; i < rawChapters.length; i++) {
         final dynamic raw = rawChapters[i];
-        final String fileName =
-            'chapters/${i.toString().padLeft(5, '0')}.txt';
+        final String fileName = 'chapters/${i.toString().padLeft(5, '0')}.txt';
         if (raw is! Map<String, dynamic> ||
             raw['path'] != fileName ||
             files[fileName] == null ||
@@ -379,9 +379,8 @@ class BookFileSyncService {
   }
 
   String _safeChapterTitle(String title) {
-    final String cleaned = title
-        .replaceAll(RegExp(r'[\\/:*?"<>|\\x00-\\x1f]'), '_')
-        .trim();
+    final String cleaned =
+        title.replaceAll(RegExp(r'[\\/:*?"<>|\\x00-\\x1f]'), '_').trim();
     return cleaned.isEmpty
         ? 'Capitulo'
         : cleaned.substring(0, cleaned.length < 72 ? cleaned.length : 72);

@@ -27,6 +27,7 @@ class BookReference {
   final BookFormat format;
   final String sourceLabel;
   final String? directoryPath;
+
   /// Stable library ID when restored on another device.
   final String? syncedBookId;
   final String? coverPath;
