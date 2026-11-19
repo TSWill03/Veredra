@@ -14,7 +14,7 @@ para os dados de leitura.
 - login, logout, refresh e persistencia de sessao;
 - confirmacao de e-mail;
 - solicitacao e conclusao de redefinicao de senha;
-- Google OAuth com PKCE preservado no codigo, mas desativado por feature flag;
+- Google OAuth por navegador com PKCE e flag de ativacao por plataforma;
 - estado de loading e bloqueio de envio duplicado;
 - mensagens amigaveis sem revelar se um e-mail existe;
 - sessao expirada e retorno ao modo local;
@@ -47,12 +47,12 @@ Supabase/Google Cloud.
 4. configure Site URL como `https://wicolly.com.br/veredra/`;
 5. mantenha expiracao/refresh de JWT e protecao antiabuso adequadas.
 
-## Google Cloud e OAuth (pendencia futura)
+## Google Cloud e OAuth
 
-Nesta entrega, `ENABLE_GOOGLE_AUTH=false` e o botao nao aparece. O gateway
-tambem bloqueia qualquer tentativa programatica, portanto configuracao Google
-incompleta nao afeta cadastro, login por senha, bootstrap, testes ou build Web.
-O codigo nao foi removido. Para uma entrega futura:
+Quando `ENABLE_GOOGLE_AUTH=false`, o botao Google permanece oculto e o gateway
+bloqueia seu uso; login com e-mail/senha e leitura local continuam funcionando.
+Nos builds publicados com Google habilitado, o provedor e os redirects devem
+estar configurados previamente. A configuracao original contemplou:
 
 1. crie a tela de consentimento e credencial OAuth Web;
 2. no Google, autorize o callback do Supabase:
@@ -96,14 +96,39 @@ Secret pertence exclusivamente a configuracao Google do Supabase hospedado.
 - Redirects pos-login: `https://wicolly.com.br/veredra/` e `veredra://auth-callback/`.
 - Android: intent filter do esquema `veredra` ja presente no projeto.
 - iOS: `CFBundleURLTypes` declara `veredra` para o retorno ao app via PKCE.
-- Windows/macOS/Linux portateis: Google OAuth fica oculto ate existir registro
-  e validacao de um manipulador de URI confiavel. Login por senha permanece.
+- Windows: Google OAuth habilitado a partir de 0.1.3+4, com associacao do
+  esquema via instalador por usuario e entrega do callback ao app_links.
+- macOS/Linux: login Google permanece oculto ate configurar protocolo nativo.
 
 O Veredra usa `signInWithOAuth` do Supabase via navegador, nao o SDK
 `google_sign_in` nativo. Portanto `REVERSED_CLIENT_ID` do plist do Google
 nao e necessario neste fluxo. Nunca versionar o Client Secret do Google ou
 um Supabase PAT. Na branch de preview `feat/google-oauth-20261119`,
 `ENABLE_GOOGLE_AUTH=true` permite validar o botao sem publicar em producao.
-O build atual em `main` continua com Google desabilitado. Validar fluxo
-PKCE completo, cancelamento, sessao e E2E em Web, Android e iOS, alem de
-testar dispositivos fisicos antes da liberacao e deploy.
+A flag Google foi habilitada nos builds publicados a partir de `0.1.1+2`.
+Validar retorno PKCE, cancelamento, persistencia de sessao e sincronizacao em
+Web, Android, iOS e Windows; testes de CI nao substituem testes com uma conta real.
+
+## Windows Desktop: Google OAuth via app_links (0.1.3+4)
+
+A tela de conta passa a oferecer `Entrar com Google` em Windows quando
+`ENABLE_GOOGLE_AUTH=true` e o Supabase esta configurado no build. O login
+abre o navegador padrao e volta pelo redirect existente
+`veredra://auth-callback/`, com verificacao PKCE pelo `supabase_flutter`.
+
+O EXE Windows portatil requer associar o esquema ao executavel, uma vez por
+usuario, apos instalar a release. Exemplo (pelo diretorio do projeto):
+
+```powershell
+.\tool\install_windows_oauth_protocol.ps1 -AppPath "$env:LOCALAPPDATA\Programs\Veredra\0.1.3+4\veredra.exe"
+```
+
+O script verifica se outro aplicativo ja controla o esquema e altera apenas
+`HKCU`, sem elevar privilegios. A futura distribuicao MSIX devera gerenciar
+esse protocolo na instalacao/desinstalacao.
+
+O runner Windows encaminha callbacks apenas para outra instancia do **mesmo
+executavel**, sem duplicar janelas nem entregar um codigo PKCE a uma versao
+anterior aberta. Se o aplicativo estiver fechado, uma nova instancia recebe
+o link inicial pelo `app_links`. Nenhuma credencial ou token deve ser salvo
+em logs. O login final requer interacao humana com a conta Google.

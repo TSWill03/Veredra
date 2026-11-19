@@ -23,7 +23,8 @@ class SupabaseAuthGateway implements AuthGateway {
       _googleAuthEnabled &&
       (kIsWeb ||
           defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+          defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.windows);
 
   @override
   AuthUser? get currentUser => _mapUser(_client.auth.currentUser);
