@@ -58,3 +58,10 @@ O app esta tecnicamente mais proximo de uma beta controlada, mas nao deve ser
 declarado pronto para beta publica enquanto os quatro itens P1 externos acima
 nao forem comprovados. Nao esta pronto para producao. Builds locais aprovados
 nao substituem auth hospedado, assinatura, deploy e smoke test live.
+
+## Atualizacao em 2026-11-18 — backend novo
+
+- Supabase Veredra novo `bfvbkypjyvyolguzzslt` na organizacao BlackLight Tech, `sa-east-1`; project health ativo.
+- Schema aplicado: 12 tabelas publicas, todas com RLS, 48 policies de propriedade e bucket `veredra-books` privado. Correcao extra: `anon` nao pode executar `public.delete_own_account()`.
+- Chave publicavel e URL disponiveis na configuracao de build `config/supabase.production.json`; nenhum segredo privado nela.
+- Ainda <b>nao validado</b>: configuracao Auth Dashboard (redirect, SMTP), login e sync com duas contas reais, builds de release e publicacao Web/iOS. Nao promover a producao nem declarar autenticacao real funcional com base apenas no esquema.

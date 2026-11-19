@@ -165,3 +165,17 @@ Consulte `docs/DEPLOYMENT.md` antes de publicar.
 
 Nao ha licenca publica definida. Ate uma decisao explicita do autor, trate o
 codigo como propriedade intelectual do projeto.
+
+## Novo Supabase de producao (2026-11-18)
+
+O projeto anterior foi substituido pelo projeto `Veredra` (ref `bfvbkypjyvyolguzzslt`, regiao `sa-east-1`) na organizacao BlackLight Tech. O esquema atual, RLS e bucket privado estao aplicados no backend hospedado. O arquivo versionado `config/supabase.production.json` contem **somente** configuracao publicavel de cliente (URL e chave `sb_publishable_`) e nao possui senhas nem chaves secretas.
+
+Para testar localmente com o backend hospedado, execute:
+
+```bash
+flutter run -d chrome --dart-define-from-file=config/supabase.production.json
+```
+
+Os workflows GitHub Actions usam este arquivo para gerar Web, Android, Windows e iOS. Para builds locais, inclua a mesma flag `--dart-define-from-file=config/supabase.production.json`; sem ela o app permanece em modo local. Esta configuracao **nao valida** por si so login, envio de email, URLs de redirecionamento nem sincronizacao entre dois clientes: e necessario configurar Site URL, redirects e SMTP no Dashboard, preparar conta de teste exclusiva e executar E2E hospedado. Google OAuth permanece desativado.
+
+A chave publicavel e intencionalmente exposta aos clientes e sua seguranca depende de RLS, protecao antiabuso e configuracao do Auth. Nunca adicione `sb_secret_`, service role, credenciais SMTP, client secret Google, senhas nem tokens ao arquivo ou ao Git. Livros completos continuam sem upload automatico.

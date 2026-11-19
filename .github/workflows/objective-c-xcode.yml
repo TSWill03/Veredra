@@ -149,11 +149,11 @@ jobs:
 
       - name: Build unsigned iOS app
         if: env.HAS_IOS_SIGNING != 'true'
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define-from-file=config/supabase.production.json
 
       - name: Build signed iOS IPA
         if: env.HAS_IOS_SIGNING == 'true'
-        run: flutter build ipa --release --export-options-plist="$IOS_EXPORT_OPTIONS"
+        run: flutter build ipa --release --dart-define-from-file=config/supabase.production.json --export-options-plist="$IOS_EXPORT_OPTIONS"
 
       - name: Upload unsigned iOS artifact
         if: env.HAS_IOS_SIGNING != 'true'
