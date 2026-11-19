@@ -204,6 +204,7 @@ class BookFileSyncService {
         throw StateError('Numero de capitulos invalido.');
       }
       final List<Map<String, String>> chapterIndex = <Map<String, String>>[];
+      final List<String>? originalTitles = await _syncedChapterTitles(entry.id);
       for (int i = 0; i < chapters.length; i++) {
         final String name = 'chapters/${i.toString().padLeft(5, '0')}.txt';
         final Uint8List bytes =
@@ -214,7 +215,9 @@ class BookFileSyncService {
         addFile(name, bytes);
         chapterIndex.add(<String, String>{
           'path': name,
-          'title': chapters[i].title,
+          'title': originalTitles != null && originalTitles.length == chapters.length
+              ? originalTitles[i]
+              : chapters[i].title,
         });
       }
       manifest['chapters'] = chapterIndex;
@@ -275,6 +278,7 @@ class BookFileSyncService {
     final String folder = sha256.convert(utf8.encode(entry.id)).toString();
     final String root = 'profiles/$profileId/storage/synced_books/$folder';
     final List<String> paths = <String>[];
+    final List<String> originalChapterTitles = <String>[];
     final String? pdf = decoded['pdf'] as String?;
     if (entry.reference.isPdf) {
       if (pdf != 'book.pdf' || files[pdf] == null) {
@@ -303,7 +307,13 @@ class BookFileSyncService {
         if (title.isEmpty || title.length > 400) {
           throw StateError('Titulo de capitulo invalido.');
         }
-        final String key = '$root/$fileName';
+        // Keep readable chapter names in the UI while preserving the original
+        // manifest titles for deterministic checksum comparison on next sync.
+        originalChapterTitles.add(title);
+        final String safeTitle = _safeChapterTitle(title);
+        final String localFileName =
+            '${i.toString().padLeft(5, '0')} - $safeTitle.txt';
+        final String key = '$root/chapters/$localFileName';
         await _storage.writeString(
           key,
           utf8.decode(_contents(files[fileName]!)),
@@ -327,6 +337,12 @@ class BookFileSyncService {
       );
     }
 
+    if (originalChapterTitles.isNotEmpty) {
+      await _storage.writeString(
+        '$root/chapter_titles.json',
+        jsonEncode(originalChapterTitles),
+      );
+    }
     // Commit library references only after all assets are safely persisted.
     final List<LibraryEntry> all = await libraryService.loadEntries();
     final int index = all.indexWhere((item) => item.id == entry.id);
@@ -339,9 +355,36 @@ class BookFileSyncService {
       ..['syncedBookId'] = entry.id;
     all[index] = all[index].copyWith(
       reference: BookReference.fromJson(reference),
-      chapterCount: paths.length,
+      chapterCount: entry.reference.isPdf ? 0 : paths.length,
     );
     await libraryService.replaceEntries(all);
+  }
+
+  Future<List<String>?> _syncedChapterTitles(String bookId) async {
+    final String folder = sha256.convert(utf8.encode(bookId)).toString();
+    final String key =
+        'profiles/$profileId/storage/synced_books/$folder/chapter_titles.json';
+    final String? raw = await _storage.readString(key);
+    if (raw == null) return null;
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is List<dynamic> &&
+          decoded.every((value) => value is String)) {
+        return decoded.cast<String>();
+      }
+    } catch (_) {
+      // Invalid sidecar: reconstruct from local chapter names.
+    }
+    return null;
+  }
+
+  String _safeChapterTitle(String title) {
+    final String cleaned = title
+        .replaceAll(RegExp(r'[\\/:*?"<>|\\x00-\\x1f]'), '_')
+        .trim();
+    return cleaned.isEmpty
+        ? 'Capitulo'
+        : cleaned.substring(0, cleaned.length.clamp(0, 72));
   }
 
   Future<Uint8List?> _readAssetBytes(String path) async {
