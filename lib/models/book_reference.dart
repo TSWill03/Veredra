@@ -9,6 +9,7 @@ class BookReference {
     required this.format,
     required this.sourceLabel,
     this.directoryPath,
+    this.syncedBookId,
     this.coverPath,
     this.author,
     this.description,
@@ -26,6 +27,8 @@ class BookReference {
   final BookFormat format;
   final String sourceLabel;
   final String? directoryPath;
+  /// Stable library ID when restored on another device.
+  final String? syncedBookId;
   final String? coverPath;
   final String? author;
   final String? description;
@@ -86,6 +89,7 @@ class BookReference {
     BookFormat? format,
     String? sourceLabel,
     String? directoryPath,
+    String? syncedBookId,
     String? coverPath,
     String? author,
     String? description,
@@ -103,6 +107,7 @@ class BookReference {
       format: format ?? this.format,
       sourceLabel: sourceLabel ?? this.sourceLabel,
       directoryPath: directoryPath ?? this.directoryPath,
+      syncedBookId: syncedBookId ?? this.syncedBookId,
       coverPath: coverPath ?? this.coverPath,
       author: author ?? this.author,
       description: description ?? this.description,
@@ -123,6 +128,7 @@ class BookReference {
       'format': format.name,
       'sourceLabel': sourceLabel,
       'directoryPath': directoryPath,
+      'syncedBookId': syncedBookId,
       'coverPath': coverPath,
       'author': author,
       'description': description,
@@ -176,6 +182,7 @@ class BookReference {
       format: format,
       sourceLabel: json['sourceLabel'] as String? ?? format.storageLabel,
       directoryPath: json['directoryPath'] as String?,
+      syncedBookId: json['syncedBookId'] as String?,
       coverPath: json['coverPath'] as String?,
       author: json['author'] as String?,
       description: json['description'] as String?,
