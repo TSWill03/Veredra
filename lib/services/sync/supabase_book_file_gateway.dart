@@ -1,5 +1,8 @@
 // Signature: dev.tswicolly03
 import 'dart:typed_data';
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -55,7 +58,8 @@ class SupabaseBookFileGateway implements BookFileRemoteGateway {
   }) async {
     _checkUser(userId);
     // Include book ID in the immutable object path; RLS also checks user ID.
-    final String path = '$userId/$bookId/$checksum.zip';
+    final String hashedId = sha256.convert(utf8.encode(bookId)).toString();
+    final String path = '$userId/$hashedId/$checksum.zip';
     try {
       await _client.storage.from(bucket).uploadBinary(
         path,
