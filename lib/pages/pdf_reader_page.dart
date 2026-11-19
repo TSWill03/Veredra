@@ -35,6 +35,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   late final PdfDocumentRefFile _documentRef;
 
   Timer? _saveDebounce;
+  Timer? _pageCheckpoint;
+  bool _checkpointDirty = false;
   List<PdfOutlineNode> _outline = const <PdfOutlineNode>[];
   int _currentPage = 1;
   int _pageCount = 0;
@@ -46,6 +48,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _documentRef = PdfDocumentRefFile(widget.book.reference.primaryAssetPath!);
+    _pageCheckpoint = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_checkpointDirty) {
+        unawaited(_persistProgress(scheduleRemote: false));
+      }
+    });
     _loadSavedProgress();
   }
 
@@ -53,6 +60,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
+    _pageCheckpoint?.cancel();
     unawaited(_persistProgress(flushRemote: true));
     super.dispose();
   }
@@ -102,13 +110,22 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     setState(() {
       _currentPage = pageNumber;
     });
+    _checkpointDirty = true;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 500), () {
       unawaited(_persistProgress());
     });
   }
 
-  Future<void> _persistProgress({bool flushRemote = false}) async {
+  Future<void> _persistProgress({
+    bool flushRemote = false,
+    bool scheduleRemote = true,
+  }) async {
+    if (!_checkpointDirty) {
+      if (flushRemote) await widget.onFlushProgress?.call();
+      return;
+    }
+    _checkpointDirty = false;
     await widget.progressService.saveProgress(
       widget.book.id,
       ReadingProgress(
@@ -118,7 +135,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         savedAt: DateTime.now(),
       ),
     );
-    widget.onProgressSaved?.call();
+    if (scheduleRemote) widget.onProgressSaved?.call();
     if (flushRemote) {
       await widget.onFlushProgress?.call();
     }

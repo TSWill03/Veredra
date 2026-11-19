@@ -31,7 +31,9 @@ anteriores. A hora de `updated_at` do sync nao deve representar uma nova leitura
    primeiro plano, executar reconciliacao automatica quando habilitada.
 2. Antes de abrir um livro, consultar apenas o progresso remoto; usar a
    posicao mais recente disponivel para inicializar capitulo e percentual.
-3. Durante scroll TXT/EPUB: debounce local de 700 ms e timer ocioso de 5 s
+3. Durante scroll TXT/EPUB: debounce local de 700 ms e gravacao local de
+   seguranca a cada 15 s quando a rolagem e continua (sem disparar upload a
+   cada checkpoint); timer ocioso de 5 s
    para tentar sync remoto depois de parar. Scroll continuo e atendido pelo
    ciclo periodico de 1, 5, 10 ou 15 min, configuravel (padrao 5 min).
    PDF: salvar pagina atual apos 500 ms.
@@ -51,7 +53,7 @@ anteriores. A hora de `updated_at` do sync nao deve representar uma nova leitura
 
 ## Limites e verificacao antes do rollout
 - Requer a migration
-  `supabase/migrations/20261119181500_reading_progress_continuity.sql`
+  `supabase/migrations/20261119183302_reading_progress_continuity.sql`
   instalada no Supabase hospedadado **antes** de distribuir clientes que
   invocam o novo RPC; caso contrario a operacao remota de progresso falhara.
 - Migracao aditiva: nao modifica ou exclui os checkpoints existentes; adiciona
@@ -74,3 +76,20 @@ anteriores. A hora de `updated_at` do sync nao deve representar uma nova leitura
 Desativar sync automatico em Configuracoes, preservando a biblioteca local.
 A migracao possui apenas objetos auxiliares, removiveis isoladamente caso a
 revisao tecnica confirme o rollback. Nunca dar DROP na tabela de progresso.
+
+## Aplicacao no Supabase hospedado — 19/11/2026
+
+Migration additive aplicada ao projeto \`bfvbkypjyvyolguzzslt\`, com versao
+hospedada atribuida \`20261119183302\`. O nome do arquivo de migration no Git
+foi alinhado com o historico registrado no servidor para impedir reaplicacao
+indevida num \`supabase db push\`. Bucket privado e RLS de progresso preservados.
+Antes e depois: 5 registros de reading_progress, 1 proprietario. Novo RPC
+security-invoker: EXECUTE habilitado para authenticated e negado para anon.
+Trigger antigo \`reading_progress_set_updated_at\` preservado; novo trigger
+\`veredra_guard_stale_progress\` ativo. Teste autenticado transacional com
+ROLLBACK validou primeira insercao, rejeicao de timestamp mais antigo, aceitacao
+de timestamp mais novo mesmo em capitulo menor e rejeicao de usuario estranho;
+ao terminar, zero linhas artificiais persistidas.
+
+Isto verifica o backend/RLS, NAO confirma ainda um fluxo real Windows -> Web
+com sessao de usuario, retorno offline, nem instala a nova versao do cliente.

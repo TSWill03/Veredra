@@ -79,6 +79,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   int? _pendingSecondaryHighlightChapter;
 
   Timer? _saveDebounce;
+  Timer? _continuousScrollCheckpoint;
+  bool _checkpointDirty = false;
   List<ReaderAnnotation> _annotations = <ReaderAnnotation>[];
   ReaderPreferences _preferences = ReaderPreferences.defaults;
   List<ReaderBookmark> _bookmarks = <ReaderBookmark>[];
@@ -109,6 +111,17 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       fontPreset: widget.initialReaderFontPreset,
     );
     _scrollController.addListener(_handleScroll);
+    // Continuous scroll can keep the 700ms debounce from ever firing.
+    // Persist locally every 15s when there was interaction; the coordinator
+    // still controls the configured network interval independently.
+    _continuousScrollCheckpoint = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) {
+        if (_checkpointDirty) {
+          unawaited(_persistProgress(scheduleRemote: false));
+        }
+      },
+    );
     _bootstrapReader();
   }
 
@@ -116,8 +129,10 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   void dispose() {
     // Capture before disposing the scroll controller. The previous code
     // disposed it first, so a forced checkpoint could be lost on navigation.
-    final ReadingProgress? closingPosition = _captureCurrentProgress();
+    final ReadingProgress? closingPosition =
+        _checkpointDirty ? _captureCurrentProgress() : null;
     WidgetsBinding.instance.removeObserver(this);
+    _continuousScrollCheckpoint?.cancel();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -128,6 +143,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     _saveDebounce?.cancel();
     if (closingPosition != null) {
       unawaited(_saveCapturedProgress(closingPosition, flushRemote: true));
+    } else {
+      unawaited(widget.onFlushProgress?.call() ?? Future<void>.value());
     }
     unawaited(_flushReadingSession());
     super.dispose();
@@ -484,25 +501,39 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   void _scheduleProgressSave() {
+    _checkpointDirty = true;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), () {
       unawaited(_persistProgress());
     });
   }
 
-  Future<void> _persistProgress({bool flushRemote = false}) async {
+  Future<void> _persistProgress({
+    bool flushRemote = false,
+    bool scheduleRemote = true,
+  }) async {
+    if (!_checkpointDirty) {
+      if (flushRemote) await widget.onFlushProgress?.call();
+      return;
+    }
     final ReadingProgress? progress = _captureCurrentProgress();
     if (progress == null) return;
-    await _saveCapturedProgress(progress, flushRemote: flushRemote);
+    await _saveCapturedProgress(
+      progress,
+      flushRemote: flushRemote,
+      scheduleRemote: scheduleRemote,
+    );
   }
 
   Future<void> _saveCapturedProgress(
     ReadingProgress progress, {
     bool flushRemote = false,
+    bool scheduleRemote = true,
   }) async {
+    _checkpointDirty = false;
     _currentChapterIndex = progress.chapterIndex;
     await widget.progressService.saveProgress(widget.book.id, progress);
-    widget.onProgressSaved?.call();
+    if (scheduleRemote) widget.onProgressSaved?.call();
     if (flushRemote) {
       await widget.onFlushProgress?.call();
     }
