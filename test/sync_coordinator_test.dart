@@ -106,6 +106,52 @@ void main() {
     );
   });
 
+  test('exposes real metadata sync progress without a chapter download percent',
+      () async {
+    final SyncCoordinator coordinator = await _coordinator(
+      storage: MemoryAppStorage(),
+      network: FakeNetworkMonitor(true),
+      remote: FakeRemoteSyncGateway(),
+      local: FakeLocalSyncDataSource(
+        snapshots: const <LocalSyncSnapshot>[
+          LocalSyncSnapshot(
+            entityType: SyncEntityType.book,
+            entityId: 'book-a',
+            data: <String, dynamic>{'title': 'Example'},
+          ),
+          LocalSyncSnapshot(
+            entityType: SyncEntityType.progress,
+            entityId: 'book-a',
+            data: <String, dynamic>{'chapterIndex': 8},
+          ),
+        ],
+      ),
+    );
+    addTearDown(coordinator.dispose);
+    final List<String> stages = <String>[];
+    final List<double> progressValues = <double>[];
+    coordinator.addListener(() {
+      if (coordinator.phase == SyncPhase.synchronizing) {
+        stages.add(coordinator.activeStep ?? '');
+        if (coordinator.operationProgress != null) {
+          progressValues.add(coordinator.operationProgress!);
+        }
+      }
+    });
+
+    await coordinator.syncNow();
+    expect(stages, contains('Preparando dados de leitura'));
+    expect(stages, contains('Enviando dados de leitura'));
+    expect(stages, contains('Buscando dados de leitura'));
+    expect(stages, contains('Aplicando dados de leitura'));
+    expect(progressValues, contains(0.0));
+    expect(progressValues, contains(0.5));
+    expect(progressValues, contains(1.0));
+    expect(coordinator.activeStep, isNull);
+    expect(coordinator.operationProgress, isNull);
+    expect(coordinator.phase, SyncPhase.synchronized);
+  });
+
   test('expired token changes state without deleting local queue', () async {
     final MemoryAppStorage storage = MemoryAppStorage();
     final FakeRemoteSyncGateway remote = FakeRemoteSyncGateway()..expire = true;

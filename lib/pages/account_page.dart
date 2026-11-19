@@ -366,6 +366,37 @@ class _AccountPageState extends State<AccountPage> {
                       : '${sync.pendingCount} alteracoes pendentes',
                 ),
               ),
+              if (sync != null && sync.phase == SyncPhase.synchronizing)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        sync.activeStep ?? 'Sincronizando dados de leitura',
+                        key: const Key('sync-progress-stage'),
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        key: const Key('sync-progress-bar'),
+                        value: sync.operationProgress,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        sync.operationProgress != null
+                            ? '${sync.processedOperations} de ${sync.totalOperations} '
+                                'alteracoes processadas'
+                            : 'Verificando e atualizando os registros...',
+                        key: const Key('sync-progress-count'),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Esta barra acompanha apenas dados de leitura. '
+                        'Arquivos e capitulos nao sao transferidos neste modo.',
+                      ),
+                    ],
+                  ),
+                ),
               SwitchListTile(
                 key: const Key('sync-consent-switch'),
                 value: sync?.preferences.enabled ?? false,
