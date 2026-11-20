@@ -17,6 +17,7 @@ class PdfReaderPage extends StatefulWidget {
     required this.progressService,
     required this.onThemeModeChanged,
     this.onProgressSaved,
+    this.onContinuousProgressSaved,
     this.onFlushProgress,
     this.syncCoordinator,
   });
@@ -25,6 +26,7 @@ class PdfReaderPage extends StatefulWidget {
   final ProgressService progressService;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final void Function()? onProgressSaved;
+  final void Function()? onContinuousProgressSaved;
   final Future<void> Function()? onFlushProgress;
   final SyncCoordinator? syncCoordinator;
 
@@ -140,7 +142,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         savedAt: DateTime.now(),
       ),
     );
-    if (scheduleRemote) widget.onProgressSaved?.call();
+    if (scheduleRemote) {
+      widget.onProgressSaved?.call();
+    } else {
+      widget.onContinuousProgressSaved?.call();
+    }
     if (flushRemote) {
       await widget.onFlushProgress?.call();
     }

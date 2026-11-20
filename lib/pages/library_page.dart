@@ -342,6 +342,8 @@ class _LibraryPageState extends State<LibraryPage> {
             syncCoordinator: widget.syncCoordinator,
             onProgressSaved: () =>
                 widget.syncCoordinator?.notifyLocalProgressSaved(book.id),
+            onContinuousProgressSaved: () => widget.syncCoordinator
+                ?.notifyLocalProgressSaved(book.id, continuous: true),
             onFlushProgress: () =>
                 widget.syncCoordinator?.flushReadingProgress(book.id) ??
                 Future<void>.value(),
