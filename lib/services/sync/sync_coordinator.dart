@@ -309,14 +309,15 @@ class SyncCoordinator extends ChangeNotifier {
       }
 
       _ensureCurrentUser(userId);
-      final String registrationKey = userId + ':' + deviceId;
+      final String platformLabel = deviceIdentityService.platformLabel;
+      final String registrationKey = '$userId:$deviceId';
       if (_registeredDevices.add(registrationKey)) {
         try {
           await remoteGateway!.upsertDevice(
             userId: userId,
             deviceId: deviceId,
-            name: 'Veredra ' + deviceIdentityService.platformLabel,
-            platform: deviceIdentityService.platformLabel,
+            name: 'Veredra $platformLabel',
+            platform: platformLabel,
           );
         } catch (_) {
           _registeredDevices.remove(registrationKey);

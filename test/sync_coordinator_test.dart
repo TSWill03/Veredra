@@ -469,7 +469,7 @@ class FakeNetworkMonitor implements NetworkMonitor {
   Future<bool> isOnline() async => online;
 }
 
-class FakeLocalSyncDataSource implements LocalSyncDataSource {
+class FakeLocalSyncDataSource extends LocalSyncDataSource {
   FakeLocalSyncDataSource({this.snapshots = const <LocalSyncSnapshot>[]});
 
   final List<LocalSyncSnapshot> snapshots;
