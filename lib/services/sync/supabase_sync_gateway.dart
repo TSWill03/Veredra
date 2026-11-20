@@ -7,7 +7,7 @@ import 'sync_models.dart';
 
 class SupabaseSyncGateway implements RemoteSyncGateway {
   SupabaseSyncGateway(this._client, {Uuid? uuid})
-      : _uuid = uuid ?? const Uuid();
+    : _uuid = uuid ?? const Uuid();
 
   final SupabaseClient _client;
   final Uuid _uuid;
@@ -31,17 +31,14 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
     required String platform,
   }) async {
     try {
-      await _client.from('devices').upsert(
-        <String, dynamic>{
-          'id': deviceId,
-          'user_id': userId,
-          'name': name,
-          'platform': platform,
-          'last_seen_at': DateTime.now().toUtc().toIso8601String(),
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'id',
-      );
+      await _client.from('devices').upsert(<String, dynamic>{
+        'id': deviceId,
+        'user_id': userId,
+        'name': name,
+        'platform': platform,
+        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'id');
     } on AuthException catch (_) {
       throw const SyncRemoteException(
         'A sessao expirou. Entre novamente.',
@@ -53,8 +50,18 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   }
 
   @override
-  Future<List<RemoteSyncRecord>> pullProgress({
+  Future<List<RemoteSyncRecord>> pullProgress({required String userId}) =>
+      _readProgress(userId: userId);
+
+  @override
+  Future<List<RemoteSyncRecord>> pullProgressForBook({
     required String userId,
+    required String bookId,
+  }) => _readProgress(userId: userId, bookId: bookId);
+
+  Future<List<RemoteSyncRecord>> _readProgress({
+    required String userId,
+    String? bookId,
   }) async {
     if (_client.auth.currentUser?.id != userId) {
       throw const SyncRemoteException(
@@ -63,11 +70,13 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
       );
     }
     try {
-      final List<dynamic> rows = await _client
+      final query = _client
           .from('reading_progress')
           .select('local_id,data,updated_at,deleted_at,version')
-          .eq('user_id', userId)
-          .order('updated_at');
+          .eq('user_id', userId);
+      final List<dynamic> rows = bookId == null
+          ? await query.order('updated_at')
+          : await query.eq('local_id', bookId).order('updated_at');
       final List<RemoteSyncRecord> result = <RemoteSyncRecord>[];
       for (final dynamic raw in rows) {
         if (raw is! Map<String, dynamic>) continue;
@@ -80,11 +89,10 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
             payload: raw['data'] is Map<String, dynamic>
                 ? Map<String, dynamic>.from(raw['data'] as Map<String, dynamic>)
                 : <String, dynamic>{},
-            updatedAt: DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
+            updatedAt:
+                DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-            deletedAt: DateTime.tryParse(
-              raw['deleted_at'] as String? ?? '',
-            ),
+            deletedAt: DateTime.tryParse(raw['deleted_at'] as String? ?? ''),
             version: (raw['version'] as num?)?.toInt() ?? 1,
           ),
         );
@@ -137,13 +145,13 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
           },
         );
       } else {
-        await _client.from(table).upsert(
-              row,
-              onConflict: 'user_id,local_id',
-            );
+        await _client.from(table).upsert(row, onConflict: 'user_id,local_id');
       }
-      await _client.from('sync_operations').upsert(
-        <String, dynamic>{
+      // The progress RPC is already atomic and authoritative. Do not append
+      // an extra historical sync_operations row for every scroll checkpoint:
+      // those rows are never consumed by the client and grow indefinitely.
+      if (operation.entityType != SyncEntityType.progress) {
+        await _client.from('sync_operations').upsert(<String, dynamic>{
           'id': operation.id,
           'user_id': operation.userId,
           'device_id': operation.deviceId,
@@ -156,9 +164,8 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
           },
           'created_at': operation.createdAt.toUtc().toIso8601String(),
           'processed_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'id',
-      );
+        }, onConflict: 'id');
+      }
     } on AuthException catch (_) {
       throw const SyncRemoteException(
         'A sessao expirou. Entre novamente.',
@@ -206,10 +213,8 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
                   : <String, dynamic>{},
               updatedAt:
                   DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
-                      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-              deletedAt: DateTime.tryParse(
-                raw['deleted_at'] as String? ?? '',
-              ),
+                  DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+              deletedAt: DateTime.tryParse(raw['deleted_at'] as String? ?? ''),
               version: (raw['version'] as num?)?.toInt() ?? 1,
             ),
           );
@@ -234,9 +239,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   ) {
     switch (type) {
       case SyncEntityType.profile:
-        return <String, dynamic>{
-          'display_name': data['name'] ?? 'Usuario',
-        };
+        return <String, dynamic>{'display_name': data['name'] ?? 'Usuario'};
       case SyncEntityType.preferences:
         return <String, dynamic>{
           'profile_local_id': data['profileId'] ?? 'principal',
@@ -244,8 +247,8 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
       case SyncEntityType.book:
         final Map<String, dynamic> reference =
             data['reference'] is Map<String, dynamic>
-                ? data['reference'] as Map<String, dynamic>
-                : <String, dynamic>{};
+            ? data['reference'] as Map<String, dynamic>
+            : <String, dynamic>{};
         return <String, dynamic>{
           'profile_local_id': data['profileId'] ?? 'principal',
           'title': reference['title'] ?? 'Livro',
@@ -271,7 +274,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   }
 
   String _remoteId(SyncOperation operation) => _uuid.v5(
-        Namespace.url.value,
-        '${operation.userId}:${operation.entityType.name}:${operation.entityId}',
-      );
+    Namespace.url.value,
+    '${operation.userId}:${operation.entityType.name}:${operation.entityId}',
+  );
 }

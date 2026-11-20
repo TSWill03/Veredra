@@ -93,3 +93,42 @@ ao terminar, zero linhas artificiais persistidas.
 
 Isto verifica o backend/RLS, NAO confirma ainda um fluxo real Windows -> Web
 com sessao de usuario, retorno offline, nem instala a nova versao do cliente.
+
+
+## Sincronização incremental revisada — 20/11/2026
+
+Esta seção substitui o trecho anterior sobre uma chamada de sincronização geral
+a cada pausa de leitura. O novo caminho de checkpoint é exclusivo por livro.
+
+- Durante TXT/EPUB, o debounce local continua em 700 ms; PDF continua em
+  500 ms. A gravação local de segurança de 15 s continua independente da rede.
+- Após 5 s de inatividade, o coordenador envia somente o livro modificado.
+  Durante rolagem sem pausas, o checkpoint local alimenta um ciclo remoto
+  independente de aproximadamente 45 s, sem chamadas por evento de scroll.
+- O método syncProgress(bookId) lê somente o progresso local desse livro,
+  grava a operação em fila durável, consulta somente sua posição remota,
+  resolve por savedAt e envia apenas o que ainda está pendente. Ele não chama
+  o sincronizador de arquivos completos nem prepara todos os metadados.
+- SyncQueue serializa leitura, modificação e gravação de cada operação.
+  Confirmar uma operação A exige a revisão enviada: confirmação tardia
+  não pode apagar a alteração B criada enquanto A estava em voo.
+- A deduplicação não cria revisão nova para payload inalterado. O descarte
+  de progresso antigo compara o savedAt da operação que ainda está na fila
+  com o checkpoint remoto confirmado, sob o mesmo lock.
+- O cursor lastSyncAt continua reservado ao delta de metadados; o sync
+  incremental mantém lastProgressSyncAt em separado.
+- SupabaseSyncGateway consulta por user_id + local_id, sob RLS existente.
+  A RPC atômica de progresso não precisa de registro extra de histórico
+  para cada checkpoint em sync_operations.
+
+### Limites e validação
+
+No preflight de 20/11, havia 3.286 registros históricos em sync_operations.
+Não foram eliminados. A migração 20261119183302 já existia no Supabase
+hospedado; nenhuma mudança no schema ou exclusão foi necessária.
+
+A política de conflitos continua baseada no savedAt do cliente e
+**não corrige relógios incorretos de maneira definitiva**. A evolução para
+revisão definida pelo servidor exige teste de compatibilidade e migração
+aditiva antes de produção. Testes de unidade/fakes não substituem homologação
+autenticada Windows-Web-Android-iOS, nem garantem flush após kill forçado.

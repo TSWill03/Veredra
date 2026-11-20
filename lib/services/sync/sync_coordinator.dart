@@ -28,8 +28,8 @@ class SyncCoordinator extends ChangeNotifier {
     this.bookFileSyncService,
     AppStorage? storage,
     DiagnosticsService? diagnostics,
-  })  : _storage = storage ?? createAppStorage(),
-        _diagnostics = diagnostics ?? DiagnosticsService();
+  }) : _storage = storage ?? createAppStorage(),
+       _diagnostics = diagnostics ?? DiagnosticsService();
 
   final String profileId;
   final String? Function() currentUserId;
@@ -46,6 +46,7 @@ class SyncCoordinator extends ChangeNotifier {
   SyncPhase phase = SyncPhase.localOnly;
   SyncPreferences preferences = const SyncPreferences.defaults();
   DateTime? lastSyncAt;
+  DateTime? lastProgressSyncAt;
   int pendingCount = 0;
   String? errorMessage;
 
@@ -71,27 +72,64 @@ class SyncCoordinator extends ChangeNotifier {
   }
 
   Future<void>? _activeSync;
+  bool _activeSyncIsProgress = false;
   StreamSubscription<bool>? _networkSubscription;
   Timer? _automaticTimer;
   Timer? _progressIdleTimer;
+  Timer? _continuousProgressTimer;
+  Future<void>? _progressFlush;
+  final Set<String> _dirtyProgressBooks = <String>{};
+  final Set<String> _registeredDevices = <String>{};
 
-  /// On an idle reader, the latest scroll checkpoint is uploaded quickly.
-  /// Continuous scrolling is still covered by the regular five-minute timer.
-  void notifyLocalProgressSaved() {
+  /// The reader has already persisted its local checkpoint. An idle flush
+  /// sends only the changed book, never an entire library snapshot.
+  /// Continuous scroll checkpoints use a 45-second remote cadence.
+  void notifyLocalProgressSaved(String bookId, {bool continuous = false}) {
     if (!preferences.enabled ||
         !preferences.automatic ||
         currentUserId() == null) {
       return;
     }
+    _dirtyProgressBooks.add(bookId);
+    if (phase != SyncPhase.synchronizing) {
+      phase = SyncPhase.pending;
+      notifyListeners();
+    }
+    _continuousProgressTimer ??= Timer.periodic(
+      const Duration(seconds: 45),
+      (_) => unawaited(_flushPendingProgress()),
+    );
+    if (!continuous) {
+      _progressIdleTimer?.cancel();
+      _progressIdleTimer = Timer(
+        const Duration(seconds: 5),
+        () => unawaited(_flushPendingProgress()),
+      );
+    }
+  }
+
+  Future<void> _drainPendingProgress() async {
+    while (_dirtyProgressBooks.isNotEmpty) {
+      final String bookId = _dirtyProgressBooks.first;
+      _dirtyProgressBooks.remove(bookId);
+      await syncProgress(bookId);
+    }
+  }
+
+  Future<void> _flushPendingProgress() {
     _progressIdleTimer?.cancel();
-    _progressIdleTimer = Timer(const Duration(seconds: 5), () {
-      unawaited(syncNow(stageSnapshot: true));
+    return _progressFlush ??= _drainPendingProgress().whenComplete(() {
+      _progressFlush = null;
+      if (_dirtyProgressBooks.isEmpty) {
+        _continuousProgressTimer?.cancel();
+        _continuousProgressTimer = null;
+      }
     });
   }
 
-  /// A reader waits for the latest cloud checkpoint before choosing its
-  /// initial scroll position. This does not re-upload the entire library.
-  Future<void> refreshReadingProgress() async {
+  /// Load only the requested checkpoint, avoiding a full remote pull when
+  /// opening a single book. Offline reading keeps using the local cache.
+  Future<void> refreshReadingProgress([String? bookId]) async {
     final String? userId = currentUserId();
     if (!preferences.enabled ||
         !preferences.automatic ||
@@ -101,8 +139,12 @@ class SyncCoordinator extends ChangeNotifier {
       return;
     }
     try {
-      final List<RemoteSyncRecord> records =
-          await remoteGateway!.pullProgress(userId: userId);
+      final List<RemoteSyncRecord> records = bookId == null
+          ? await remoteGateway!.pullProgress(userId: userId)
+          : await remoteGateway!
+                .pullProgressForBook(userId: userId, bookId: bookId)
+                .timeout(const Duration(seconds: 3));
+      _ensureCurrentUser(userId);
       await localRepository.applyRemoteRecords(records);
     } catch (error, stackTrace) {
       await _diagnostics.record(
@@ -110,18 +152,21 @@ class SyncCoordinator extends ChangeNotifier {
         error,
         stackTrace,
       );
-      // A cloud outage must never prevent reading the cached local book.
     }
   }
 
-  Future<void> flushReadingProgress() {
-    _progressIdleTimer?.cancel();
+  Future<void> flushReadingProgress(String bookId) {
     if (!preferences.enabled ||
         !preferences.automatic ||
         currentUserId() == null) {
       return Future<void>.value();
     }
-    return syncNow(stageSnapshot: true);
+    _dirtyProgressBooks.add(bookId);
+    if (phase != SyncPhase.synchronizing) {
+      phase = SyncPhase.pending;
+      notifyListeners();
+    }
+    return _flushPendingProgress();
   }
 
   Future<void> initialize() async {
@@ -132,8 +177,8 @@ class SyncCoordinator extends ChangeNotifier {
     );
     phase = preferences.enabled
         ? pendingCount > 0
-            ? SyncPhase.pending
-            : SyncPhase.synchronized
+              ? SyncPhase.pending
+              : SyncPhase.synchronized
         : SyncPhase.localOnly;
     _networkSubscription = networkMonitor.changes.listen((bool online) {
       if (!online) {
@@ -185,10 +230,186 @@ class SyncCoordinator extends ChangeNotifier {
   }
 
   Future<void> syncNow({bool stageSnapshot = true}) {
-    return _activeSync ??=
-        _synchronize(stageSnapshot: stageSnapshot).whenComplete(
-      () => _activeSync = null,
-    );
+    final Future<void>? active = _activeSync;
+    if (active != null) {
+      // A manual/periodic full sync must not be swallowed by an active
+      // lightweight per-book checkpoint.
+      if (_activeSyncIsProgress) {
+        return active.then((_) => syncNow(stageSnapshot: stageSnapshot));
+      }
+      return active;
+    }
+    _activeSyncIsProgress = false;
+    return _activeSync = _synchronize(
+      stageSnapshot: stageSnapshot,
+    ).whenComplete(() => _activeSync = null);
+  }
+
+  void _ensureCurrentUser(String userId) {
+    if (currentUserId() != userId) {
+      throw const SyncRemoteException(
+        'A conta mudou durante a sincronizacao.',
+        sessionExpired: true,
+      );
+    }
+  }
+
+  /// A book-scoped offline-first checkpoint transfer. It never uploads book
+  /// files or stages other metadata. Local outbox persistence comes first.
+  Future<void> syncProgress(String bookId) async {
+    // Never let a per-book merge race with a full-library reconciliation.
+    while (_activeSync != null) {
+      await _activeSync;
+    }
+    _activeSyncIsProgress = true;
+    _activeSync = _synchronizeProgress(bookId).whenComplete(() {
+      _activeSync = null;
+      _activeSyncIsProgress = false;
+    });
+    await _activeSync;
+  }
+
+  Future<void> _synchronizeProgress(String bookId) async {
+    final String? userId = currentUserId();
+    if (!preferences.enabled || !preferences.automatic) return;
+    if (userId == null || remoteGateway == null) {
+      phase = userId == null ? SyncPhase.sessionExpired : SyncPhase.error;
+      errorMessage = userId == null
+          ? 'Entre na conta para sincronizar.'
+          : 'O backend de sincronizacao nao esta configurado.';
+      notifyListeners();
+      return;
+    }
+
+    phase = SyncPhase.synchronizing;
+    activeStep = 'Sincronizando progresso';
+    errorMessage = null;
+    notifyListeners();
+    try {
+      final LocalSyncSnapshot? snapshot = await localRepository
+          .loadProgressSnapshot(bookId);
+      final String deviceId = await deviceIdentityService.loadOrCreateId();
+
+      // Persist the outbox before attempting any network operation. The
+      // remote comparison below can safely discard an obsolete checkpoint.
+      if (snapshot != null) {
+        _ensureCurrentUser(userId);
+        await queue.enqueue(
+          userId: userId,
+          deviceId: deviceId,
+          entityType: SyncEntityType.progress,
+          entityId: bookId,
+          payload: <String, dynamic>{'data': snapshot.data},
+        );
+      }
+
+      if (!await networkMonitor.isOnline()) {
+        phase = SyncPhase.offline;
+        return;
+      }
+
+      _ensureCurrentUser(userId);
+      final String registrationKey = userId + ':' + deviceId;
+      if (_registeredDevices.add(registrationKey)) {
+        try {
+          await remoteGateway!.upsertDevice(
+            userId: userId,
+            deviceId: deviceId,
+            name: 'Veredra ' + deviceIdentityService.platformLabel,
+            platform: deviceIdentityService.platformLabel,
+          );
+        } catch (_) {
+          _registeredDevices.remove(registrationKey);
+          rethrow;
+        }
+      }
+
+      final List<RemoteSyncRecord> before = await remoteGateway!
+          .pullProgressForBook(userId: userId, bookId: bookId);
+      _ensureCurrentUser(userId);
+      final RemoteSyncRecord? remote = before.isEmpty ? null : before.last;
+      final DateTime? remoteTime = remote == null
+          ? null
+          : SyncConflictResolver.progressSavedAt(remote.payload);
+      final DateTime? localTime = snapshot == null
+          ? null
+          : SyncConflictResolver.progressSavedAt(snapshot.data);
+
+      if (remote != null && remote.deletedAt == null && remoteTime != null) {
+        // The comparison happens again under the queue's mutation lock:
+        // a newer checkpoint enqueued during this pull must survive.
+        await queue.discardEntity(
+          userId: userId,
+          entityType: SyncEntityType.progress,
+          entityId: bookId,
+          maxProgressSavedAt: remoteTime,
+        );
+        if (localTime == null || remoteTime.isAfter(localTime)) {
+          _ensureCurrentUser(userId);
+          await localRepository.applyRemoteRecords(<RemoteSyncRecord>[remote]);
+        }
+      }
+
+      final List<SyncOperation> due = (await queue.due())
+          .where(
+            (SyncOperation op) =>
+                op.userId == userId &&
+                op.entityType == SyncEntityType.progress &&
+                op.entityId == bookId,
+          )
+          .toList(growable: false);
+      for (final SyncOperation operation in due) {
+        _ensureCurrentUser(userId);
+        try {
+          await remoteGateway!.push(operation);
+          _ensureCurrentUser(userId);
+          // ACK A must not discard the newer local operation B.
+          await queue.markSucceeded(
+            operation.id,
+            expectedVersion: operation.version,
+          );
+        } on SyncRemoteException {
+          await queue.markFailed(
+            operation.id,
+            expectedVersion: operation.version,
+          );
+          rethrow;
+        }
+      }
+
+      final List<RemoteSyncRecord> after = await remoteGateway!
+          .pullProgressForBook(userId: userId, bookId: bookId);
+      _ensureCurrentUser(userId);
+      await localRepository.applyRemoteRecords(after);
+      // Do NOT advance lastSyncAt here: it is the metadata delta cursor.
+      lastProgressSyncAt = DateTime.now().toUtc();
+      phase = SyncPhase.synchronized;
+    } on SyncRemoteException catch (error, stackTrace) {
+      phase = error.sessionExpired ? SyncPhase.sessionExpired : SyncPhase.error;
+      errorMessage = error.message;
+      await _diagnostics.record(
+        DiagnosticCategory.synchronization,
+        error,
+        stackTrace,
+      );
+    } catch (error, stackTrace) {
+      phase = SyncPhase.error;
+      errorMessage =
+          'Nao foi possivel enviar o progresso; copia local preservada.';
+      await _diagnostics.record(
+        DiagnosticCategory.synchronization,
+        error,
+        stackTrace,
+      );
+    } finally {
+      pendingCount = (await queue.load()).length;
+      if (phase == SyncPhase.synchronized &&
+          (pendingCount > 0 || _dirtyProgressBooks.isNotEmpty)) {
+        phase = SyncPhase.pending;
+      }
+      activeStep = null;
+      notifyListeners();
+    }
   }
 
   Future<void> _synchronize({required bool stageSnapshot}) async {
@@ -271,19 +492,20 @@ class SyncCoordinator extends ChangeNotifier {
       );
       activeStep = 'Comparando posicoes de leitura';
       notifyListeners();
-      final List<RemoteSyncRecord> remoteProgresses =
-          await remoteGateway!.pullProgress(userId: userId);
+      final List<RemoteSyncRecord> remoteProgresses = await remoteGateway!
+          .pullProgress(userId: userId);
+      _ensureCurrentUser(userId);
       final Map<String, RemoteSyncRecord> remoteByBook =
           <String, RemoteSyncRecord>{
-        for (final RemoteSyncRecord record in remoteProgresses)
-          record.entityId: record,
-      };
+            for (final RemoteSyncRecord record in remoteProgresses)
+              record.entityId: record,
+          };
       final Map<String, LocalSyncSnapshot> localByBook =
           <String, LocalSyncSnapshot>{
-        for (final LocalSyncSnapshot snapshot in snapshots)
-          if (snapshot.entityType == SyncEntityType.progress)
-            snapshot.entityId: snapshot,
-      };
+            for (final LocalSyncSnapshot snapshot in snapshots)
+              if (snapshot.entityType == SyncEntityType.progress)
+                snapshot.entityId: snapshot,
+          };
 
       // Remote checkpoints are applied first, only if newer. An earlier
       // chapter saved later is a valid "resume here" position.
@@ -295,8 +517,9 @@ class SyncCoordinator extends ChangeNotifier {
         final DateTime? localTime = local == null
             ? null
             : SyncConflictResolver.progressSavedAt(local.data);
-        final DateTime? remoteTime =
-            SyncConflictResolver.progressSavedAt(remote.payload);
+        final DateTime? remoteTime = SyncConflictResolver.progressSavedAt(
+          remote.payload,
+        );
         if (local == null ||
             remoteTime != null &&
                 (localTime == null || remoteTime.isAfter(localTime))) {
@@ -309,6 +532,7 @@ class SyncCoordinator extends ChangeNotifier {
             userId: userId,
             entityType: SyncEntityType.progress,
             entityId: remote.entityId,
+            maxProgressSavedAt: remoteTime,
           );
         }
       }
@@ -327,18 +551,21 @@ class SyncCoordinator extends ChangeNotifier {
         }
         final Map<String, dynamic> data =
             operation.payload['data'] is Map<String, dynamic>
-                ? Map<String, dynamic>.from(
-                    operation.payload['data'] as Map<String, dynamic>)
-                : <String, dynamic>{};
+            ? Map<String, dynamic>.from(
+                operation.payload['data'] as Map<String, dynamic>,
+              )
+            : <String, dynamic>{};
         final DateTime? queuedTime = SyncConflictResolver.progressSavedAt(data);
-        final DateTime? serverTime =
-            SyncConflictResolver.progressSavedAt(remote.payload);
+        final DateTime? serverTime = SyncConflictResolver.progressSavedAt(
+          remote.payload,
+        );
         if (serverTime != null &&
             (queuedTime == null || !queuedTime.isAfter(serverTime))) {
           await queue.discardEntity(
             userId: userId,
             entityType: SyncEntityType.progress,
             entityId: operation.entityId,
+            maxProgressSavedAt: serverTime,
           );
         }
       }
@@ -348,8 +575,9 @@ class SyncCoordinator extends ChangeNotifier {
           continue;
         }
         final RemoteSyncRecord? remote = remoteByBook[snapshot.entityId];
-        final DateTime? localTime =
-            SyncConflictResolver.progressSavedAt(snapshot.data);
+        final DateTime? localTime = SyncConflictResolver.progressSavedAt(
+          snapshot.data,
+        );
         final DateTime? remoteTime = remote == null
             ? null
             : SyncConflictResolver.progressSavedAt(remote.payload);
@@ -376,11 +604,19 @@ class SyncCoordinator extends ChangeNotifier {
 
       for (final SyncOperation operation in operations) {
         try {
+          _ensureCurrentUser(userId);
           await remoteGateway!.push(operation);
-          await queue.markSucceeded(operation.id);
+          _ensureCurrentUser(userId);
+          await queue.markSucceeded(
+            operation.id,
+            expectedVersion: operation.version,
+          );
         } on SyncRemoteException catch (error, stackTrace) {
           hadFailure = true;
-          await queue.markFailed(operation.id);
+          await queue.markFailed(
+            operation.id,
+            expectedVersion: operation.version,
+          );
           if (error.sessionExpired) {
             phase = SyncPhase.sessionExpired;
             errorMessage = error.message;
@@ -400,35 +636,36 @@ class SyncCoordinator extends ChangeNotifier {
       if (phase != SyncPhase.sessionExpired) {
         activeStep = 'Buscando dados de leitura';
         notifyListeners();
-        final List<RemoteSyncRecord> records =
-            await remoteGateway!.pullSince(userId: userId, since: lastSyncAt);
+        final List<RemoteSyncRecord> records = await remoteGateway!.pullSince(
+          userId: userId,
+          since: lastSyncAt,
+        );
         activeStep = 'Aplicando dados de leitura';
         notifyListeners();
+        _ensureCurrentUser(userId);
         await localRepository.applyRemoteRecords(records);
         // The upload can race with another device. A final pull reconciles
         // the result of the server-side newer-only progress upsert.
-        final List<RemoteSyncRecord> latestProgress =
-            await remoteGateway!.pullProgress(userId: userId);
+        final List<RemoteSyncRecord> latestProgress = await remoteGateway!
+            .pullProgress(userId: userId);
+        _ensureCurrentUser(userId);
         await localRepository.applyRemoteRecords(latestProgress);
         lastSyncAt = DateTime.now().toUtc();
-        await _storage.writeString(
-          _lastSyncKey,
-          lastSyncAt!.toIso8601String(),
-        );
+        await _storage.writeString(_lastSyncKey, lastSyncAt!.toIso8601String());
         if (preferences.syncBookFiles && bookFileSyncService != null) {
           activeStep = 'Sincronizando livros';
           notifyListeners();
-          final BookFileSyncReport report =
-              await bookFileSyncService!.synchronize(
-            userId: userId,
-            deviceId: deviceId,
-            onProgress: (String stage, int done, int total) {
-              activeStep = stage;
-              processedBooks = done;
-              totalBooks = total;
-              notifyListeners();
-            },
-          );
+          final BookFileSyncReport report = await bookFileSyncService!
+              .synchronize(
+                userId: userId,
+                deviceId: deviceId,
+                onProgress: (String stage, int done, int total) {
+                  activeStep = stage;
+                  processedBooks = done;
+                  totalBooks = total;
+                  notifyListeners();
+                },
+              );
           uploadedBooks = report.uploaded;
           downloadedBooks = report.downloaded;
           if (report.hasErrors) {
@@ -473,11 +710,18 @@ class SyncCoordinator extends ChangeNotifier {
   void _scheduleAutomaticSync() {
     _automaticTimer?.cancel();
     _progressIdleTimer?.cancel();
+    _continuousProgressTimer?.cancel();
+    _continuousProgressTimer = null;
+    if (!preferences.enabled || !preferences.automatic) {
+      _dirtyProgressBooks.clear();
+    }
     if (preferences.enabled && preferences.automatic) {
       _automaticTimer = Timer.periodic(
-          Duration(minutes: preferences.syncIntervalMinutes), (_) {
-        unawaited(syncNow(stageSnapshot: true));
-      });
+        Duration(minutes: preferences.syncIntervalMinutes),
+        (_) {
+          unawaited(syncNow(stageSnapshot: true));
+        },
+      );
     }
   }
 
@@ -487,6 +731,7 @@ class SyncCoordinator extends ChangeNotifier {
   void dispose() {
     _automaticTimer?.cancel();
     _progressIdleTimer?.cancel();
+    _continuousProgressTimer?.cancel();
     unawaited(_networkSubscription?.cancel());
     super.dispose();
   }

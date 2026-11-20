@@ -7,6 +7,8 @@ import 'package:pdfrx/pdfrx.dart';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/progress_service.dart';
+import '../services/sync/sync_coordinator.dart';
+import '../widgets/reader_sync_status_indicator.dart';
 
 class PdfReaderPage extends StatefulWidget {
   const PdfReaderPage({
@@ -16,6 +18,7 @@ class PdfReaderPage extends StatefulWidget {
     required this.onThemeModeChanged,
     this.onProgressSaved,
     this.onFlushProgress,
+    this.syncCoordinator,
   });
 
   final Book book;
@@ -23,6 +26,7 @@ class PdfReaderPage extends StatefulWidget {
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final void Function()? onProgressSaved;
   final Future<void> Function()? onFlushProgress;
+  final SyncCoordinator? syncCoordinator;
 
   @override
   State<PdfReaderPage> createState() => _PdfReaderPageState();
@@ -76,8 +80,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Future<void> _loadSavedProgress() async {
-    final ReadingProgress? progress =
-        await widget.progressService.loadProgress(widget.book.id);
+    final ReadingProgress? progress = await widget.progressService.loadProgress(
+      widget.book.id,
+    );
     if (!mounted || progress == null) {
       return;
     }
@@ -193,6 +198,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
               ],
             ),
             actions: <Widget>[
+              ReaderSyncStatusIndicator(coordinator: widget.syncCoordinator),
               IconButton(
                 tooltip: 'Sumario',
                 onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
@@ -295,7 +301,8 @@ class _PdfOutlineDrawer extends StatelessWidget {
                           selected: pageNumber == currentPage,
                           leading: pageNumber == null
                               ? const Icon(
-                                  Icons.subdirectory_arrow_right_rounded)
+                                  Icons.subdirectory_arrow_right_rounded,
+                                )
                               : CircleAvatar(
                                   radius: 16,
                                   child: Text('$pageNumber'),
@@ -334,10 +341,7 @@ class _PdfOutlineDrawer extends StatelessWidget {
 }
 
 class _OutlineEntry {
-  const _OutlineEntry({
-    required this.node,
-    required this.depth,
-  });
+  const _OutlineEntry({required this.node, required this.depth});
 
   final PdfOutlineNode node;
   final int depth;

@@ -28,6 +28,18 @@ class LocalSyncSnapshot {
 abstract class LocalSyncDataSource {
   Future<List<LocalSyncSnapshot>> createSnapshot();
 
+  /// A small, book-scoped checkpoint read; existing test doubles can use
+  /// the snapshot fallback without implementing another method.
+  Future<LocalSyncSnapshot?> loadProgressSnapshot(String bookId) async {
+    for (final LocalSyncSnapshot snapshot in await createSnapshot()) {
+      if (snapshot.entityType == SyncEntityType.progress &&
+          snapshot.entityId == bookId) {
+        return snapshot;
+      }
+    }
+    return null;
+  }
+
   Future<void> applyRemoteRecords(List<RemoteSyncRecord> records);
 }
 
@@ -51,6 +63,23 @@ class LocalSyncRepository implements LocalSyncDataSource {
   final ReadingStatsService readingStatsService;
 
   @override
+  Future<LocalSyncSnapshot?> loadProgressSnapshot(String bookId) async {
+    final ReadingProgress? progress = await progressService.loadProgress(
+      bookId,
+    );
+    if (progress == null) return null;
+    return LocalSyncSnapshot(
+      entityType: SyncEntityType.progress,
+      entityId: bookId,
+      data: <String, dynamic>{
+        'profileId': profileId,
+        'bookId': bookId,
+        ...progress.toJson(),
+      },
+    );
+  }
+
+  @override
   Future<List<LocalSyncSnapshot>> createSnapshot() async {
     final List<LocalSyncSnapshot> snapshots = <LocalSyncSnapshot>[];
     for (final AppProfile profile in await profileService.loadProfiles()) {
@@ -63,8 +92,8 @@ class LocalSyncRepository implements LocalSyncDataSource {
       );
     }
 
-    final Map<String, dynamic> progressState =
-        await progressService.exportState();
+    final Map<String, dynamic> progressState = await progressService
+        .exportState();
     snapshots.add(
       LocalSyncSnapshot(
         entityType: SyncEntityType.preferences,
@@ -109,18 +138,15 @@ class LocalSyncRepository implements LocalSyncDataSource {
       );
     }
 
-    final Map<String, List<ReaderBookmark>> bookmarks =
-        await bookmarkService.loadAllBookmarks();
+    final Map<String, List<ReaderBookmark>> bookmarks = await bookmarkService
+        .loadAllBookmarks();
     for (final List<ReaderBookmark> records in bookmarks.values) {
       for (final ReaderBookmark record in records) {
         snapshots.add(
           LocalSyncSnapshot(
             entityType: SyncEntityType.bookmark,
             entityId: record.id,
-            data: <String, dynamic>{
-              'profileId': profileId,
-              ...record.toJson(),
-            },
+            data: <String, dynamic>{'profileId': profileId, ...record.toJson()},
           ),
         );
       }
@@ -161,9 +187,7 @@ class LocalSyncRepository implements LocalSyncDataSource {
             entityId: entry.key,
             data: <String, dynamic>{
               'profileId': profileId,
-              ...Map<String, dynamic>.from(
-                entry.value as Map<String, dynamic>,
-              ),
+              ...Map<String, dynamic>.from(entry.value as Map<String, dynamic>),
             },
           ),
         );
@@ -264,8 +288,9 @@ class LocalSyncRepository implements LocalSyncDataSource {
           altTitle: remoteReference.altTitle,
           tags: remoteReference.tags,
         ),
-        chapterCount:
-            local.chapterCount > 0 ? local.chapterCount : incoming.chapterCount,
+        chapterCount: local.chapterCount > 0
+            ? local.chapterCount
+            : incoming.chapterCount,
         isFavorite: incoming.isFavorite,
       );
     }
