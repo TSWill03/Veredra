@@ -41,29 +41,78 @@
   <title>Veredra</title>
   <link rel="manifest" href="manifest.json">
   <style>
+    /* Move the escape hatch away from the reader's title and top controls. */
     .site-return {
       position: fixed;
-      top: max(12px, env(safe-area-inset-top));
-      left: max(12px, env(safe-area-inset-left));
+      left: max(8px, env(safe-area-inset-left));
+      bottom: calc(76px + env(safe-area-inset-bottom));
       z-index: 9999;
+      box-sizing: border-box;
       display: inline-flex;
-      min-height: 42px;
       align-items: center;
-      padding: 0 14px;
+      justify-content: center;
+      gap: 6px;
+      min-height: 38px;
+      padding: 0 12px;
       border: 1px solid rgba(255, 255, 255, .28);
       border-radius: 999px;
-      background: rgba(25, 20, 16, .86);
+      background: rgba(25, 20, 16, .88);
       color: #fff;
-      font: 700 14px/1 system-ui, sans-serif;
+      font: 700 13px/1 system-ui, sans-serif;
       text-decoration: none;
-      backdrop-filter: blur(10px);
+      white-space: nowrap;
+      opacity: .85;
+      backdrop-filter: blur(8px);
+      transition: opacity .15s ease, padding .15s ease, width .15s ease;
     }
-    .site-return:focus-visible { outline: 3px solid #ffd28a; outline-offset: 3px; }
-    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+    .site-return-arrow { font-size: 17px; line-height: 1; }
+    .site-return:focus-visible { outline: 3px solid #ffd28a; outline-offset: 3px; opacity: 1; }
+    html.veredra-reading .site-return {
+      left: 0;
+      width: 32px;
+      min-height: 34px;
+      padding: 0;
+      border-left: 0;
+      border-radius: 0 999px 999px 0;
+      opacity: .3;
+    }
+    html.veredra-reading .site-return-label { display: none; }
+    html.veredra-reading .site-return:is(:hover, :focus-visible) {
+      width: auto;
+      padding: 0 12px;
+      opacity: .96;
+    }
+    html.veredra-reading .site-return:is(:hover, :focus-visible) .site-return-label { display: inline; }
+    @media (max-width: 560px) {
+      .site-return {
+        left: 0;
+        width: 32px;
+        min-height: 34px;
+        padding: 0;
+        border-left: 0;
+        border-radius: 0 999px 999px 0;
+        opacity: .44;
+      }
+      .site-return-label { display: none; }
+      .site-return:is(:hover, :focus-visible) { opacity: .96; }
+    }
+    @media (display-mode: standalone) { .site-return { display: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .site-return { transition: none; }
+      * { scroll-behavior: auto !important; }
+    }
   </style>
 </head>
 <body>
-  <a class="site-return" href="/" aria-label="Voltar ao site principal">← Site Wícolly</a>
+  <a class="site-return" href="/" aria-label="Voltar ao site Wícolly">
+    <span class="site-return-arrow" aria-hidden="true">←</span>
+    <span class="site-return-label" aria-hidden="true">Site Wícolly</span>
+  </a>
+  <script>
+    window.veredraSetReadingMode = function (isReading) {
+      document.documentElement.classList.toggle('veredra-reading', Boolean(isReading));
+    };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
