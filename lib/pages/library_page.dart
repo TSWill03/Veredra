@@ -22,6 +22,7 @@ import '../services/library_search_service.dart';
 import '../services/profile_service.dart';
 import '../services/progress_service.dart';
 import '../services/reading_stats_service.dart';
+import '../services/site_return_bridge.dart';
 import '../services/translation_service.dart';
 import '../services/auth/account_controller.dart';
 import '../services/sync/sync_coordinator.dart';
@@ -349,9 +350,16 @@ class _LibraryPageState extends State<LibraryPage> {
                 Future<void>.value(),
           );
 
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (BuildContext context) => destination),
-    );
+    // Keep the host-site link discoverable without covering reader controls.
+    setSiteReturnReadingMode(true);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (BuildContext context) => destination),
+      );
+    } finally {
+      // Also restores the button on browser-back and exceptional route exits.
+      setSiteReturnReadingMode(false);
+    }
 
     await _refreshLibrary();
   }
