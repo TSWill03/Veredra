@@ -97,6 +97,7 @@ class _LibraryPageState extends State<LibraryPage> {
   final TextEditingController _searchController = TextEditingController();
 
   bool _isBusy = false;
+  DateTime? _lastObservedSyncAt;
   bool _isLoadingEntries = true;
   bool _lastBookAvailable = false;
   List<LibraryEntry> _entries = const <LibraryEntry>[];
@@ -109,6 +110,8 @@ class _LibraryPageState extends State<LibraryPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchChanged);
+    widget.syncCoordinator?.addListener(_handleSyncChanged);
+    _lastObservedSyncAt = widget.syncCoordinator?.lastSyncAt;
     _refreshLibrary();
     _refreshLastBookAvailability();
   }
@@ -116,6 +119,12 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void didUpdateWidget(covariant LibraryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.syncCoordinator != widget.syncCoordinator) {
+      oldWidget.syncCoordinator?.removeListener(_handleSyncChanged);
+      widget.syncCoordinator?.addListener(_handleSyncChanged);
+      _lastObservedSyncAt = widget.syncCoordinator?.lastSyncAt;
+      _refreshLibrary();
+    }
     if (oldWidget.lastBookReference != widget.lastBookReference ||
         oldWidget.currentProfile.id != widget.currentProfile.id) {
       _refreshLastBookAvailability();
@@ -125,10 +134,20 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   void dispose() {
+    widget.syncCoordinator?.removeListener(_handleSyncChanged);
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
     super.dispose();
+  }
+
+  void _handleSyncChanged() {
+    final DateTime? synchronizedAt = widget.syncCoordinator?.lastSyncAt;
+    if (synchronizedAt != null && synchronizedAt != _lastObservedSyncAt) {
+      _lastObservedSyncAt = synchronizedAt;
+      unawaited(_refreshLibrary());
+      unawaited(_refreshLastBookAvailability());
+    }
   }
 
   void _handleSearchChanged() {
@@ -138,8 +157,9 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _refreshLibrary() async {
-    final List<LibraryEntry> entries =
-        List<LibraryEntry>.from(await widget.libraryService.loadEntries());
+    final List<LibraryEntry> entries = List<LibraryEntry>.from(
+      await widget.libraryService.loadEntries(),
+    );
     entries.sort((LibraryEntry a, LibraryEntry b) {
       final DateTime aMoment = a.lastOpenedAt ?? a.importedAt;
       final DateTime bMoment = b.lastOpenedAt ?? b.importedAt;
@@ -168,8 +188,9 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    final bool exists =
-        await widget.bookService.isBookReferenceAvailable(reference);
+    final bool exists = await widget.bookService.isBookReferenceAvailable(
+      reference,
+    );
 
     if (!mounted) {
       return;
@@ -278,6 +299,9 @@ class _LibraryPageState extends State<LibraryPage> {
     int? initialChapterIndex,
     double? initialChapterProgress,
   }) async {
+    // Pull a current checkpoint before the reader loads its initial position.
+    // If offline, the cached position remains available without delay.
+    await widget.syncCoordinator?.refreshReadingProgress(book.id);
     await widget.progressService.saveLastBookReference(book.reference);
     await widget.onLastBookChanged(book.reference);
     await widget.libraryService.upsertBook(book, markOpened: true);
@@ -302,17 +326,31 @@ class _LibraryPageState extends State<LibraryPage> {
             onThemeModeChanged: widget.onThemeModeChanged,
             onFontSizeChanged: widget.onFontSizeChanged,
             onReaderFontPresetChanged: widget.onReaderFontPresetChanged,
+            syncCoordinator: widget.syncCoordinator,
+            onProgressSaved: () =>
+                widget.syncCoordinator?.notifyLocalProgressSaved(book.id),
+            onContinuousProgressSaved: () => widget.syncCoordinator
+                ?.notifyLocalProgressSaved(book.id, continuous: true),
+            onFlushProgress: () =>
+                widget.syncCoordinator?.flushReadingProgress(book.id) ??
+                Future<void>.value(),
           )
         : PdfReaderPage(
             book: book,
             progressService: widget.progressService,
             onThemeModeChanged: widget.onThemeModeChanged,
+            syncCoordinator: widget.syncCoordinator,
+            onProgressSaved: () =>
+                widget.syncCoordinator?.notifyLocalProgressSaved(book.id),
+            onContinuousProgressSaved: () => widget.syncCoordinator
+                ?.notifyLocalProgressSaved(book.id, continuous: true),
+            onFlushProgress: () =>
+                widget.syncCoordinator?.flushReadingProgress(book.id) ??
+                Future<void>.value(),
           );
 
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => destination,
-      ),
+      MaterialPageRoute<void>(builder: (BuildContext context) => destination),
     );
 
     await _refreshLibrary();
@@ -357,8 +395,9 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _editMetadata(LibraryEntry entry) async {
-    final _MetadataFormResult? result =
-        await _showMetadataDialog(entry.reference);
+    final _MetadataFormResult? result = await _showMetadataDialog(
+      entry.reference,
+    );
     if (result == null) {
       return;
     }
@@ -385,9 +424,7 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _changeCover(LibraryEntry entry) async {
     await _runBusyTask(() async {
       final String? coverPath =
-          await widget.bookService.pickAndStoreCustomCover(
-        bookId: entry.id,
-      );
+          await widget.bookService.pickAndStoreCustomCover(bookId: entry.id);
       if (coverPath == null) {
         return;
       }
@@ -407,8 +444,9 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    final _CoverFrameResult? result =
-        await _showCoverFrameDialog(entry.reference);
+    final _CoverFrameResult? result = await _showCoverFrameDialog(
+      entry.reference,
+    );
     if (result == null) {
       return;
     }
@@ -445,7 +483,8 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _translateEntry(LibraryEntry entry) async {
     if (!entry.reference.usesTextReader) {
       _showMessage(
-          'A traducao local do MVP funciona apenas em livros textuais e EPUB convertido.');
+        'A traducao local do MVP funciona apenas em livros textuais e EPUB convertido.',
+      );
       return;
     }
 
@@ -477,11 +516,8 @@ class _LibraryPageState extends State<LibraryPage> {
       builder: (BuildContext context) {
         return ValueListenableBuilder<TranslationProgress>(
           valueListenable: progressNotifier,
-          builder: (
-            BuildContext context,
-            TranslationProgress value,
-            Widget? child,
-          ) {
+          builder:
+              (BuildContext context, TranslationProgress value, Widget? child) {
             return TranslationProgressDialog(
               bookTitle: entry.title,
               progress: value,
@@ -492,8 +528,9 @@ class _LibraryPageState extends State<LibraryPage> {
     );
 
     try {
-      final Book sourceBook =
-          await widget.bookService.reopenBook(entry.reference);
+      final Book sourceBook = await widget.bookService.reopenBook(
+        entry.reference,
+      );
       final Book translatedBook = await widget.translationService.translateBook(
         sourceBook: sourceBook,
         sourceLanguage: pair.source,
@@ -513,9 +550,7 @@ class _LibraryPageState extends State<LibraryPage> {
       if (navigator.canPop()) {
         navigator.pop();
       }
-      _showMessage(
-        'Nova copia traduzida criada: ${translatedBook.title}',
-      );
+      _showMessage('Nova copia traduzida criada: ${translatedBook.title}');
     } catch (error) {
       if (mounted) {
         final NavigatorState navigator = Navigator.of(context);
@@ -755,8 +790,9 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _switchProfile(AppProfile profile) async {
     await _runBusyTask(() async {
-      final AppProfile nextProfile =
-          await widget.profileService.switchProfile(profile.id);
+      final AppProfile nextProfile = await widget.profileService.switchProfile(
+        profile.id,
+      );
       await widget.onProfileChanged(nextProfile);
       await _refreshLibrary();
       await _refreshLastBookAvailability();
@@ -774,8 +810,9 @@ class _LibraryPageState extends State<LibraryPage> {
     }
 
     await _runBusyTask(() async {
-      final AppProfile profile =
-          await widget.profileService.createProfile(name);
+      final AppProfile profile = await widget.profileService.createProfile(
+        name,
+      );
       await widget.onProfileChanged(profile);
       await _refreshLibrary();
       await _refreshLastBookAvailability();
@@ -867,8 +904,9 @@ class _LibraryPageState extends State<LibraryPage> {
     required String label,
     required String initialValue,
   }) async {
-    final TextEditingController controller =
-        TextEditingController(text: initialValue);
+    final TextEditingController controller = TextEditingController(
+      text: initialValue,
+    );
 
     final String? result = await showDialog<String>(
       context: context,
@@ -905,20 +943,27 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<_MetadataFormResult?> _showMetadataDialog(
     BookReference reference,
   ) async {
-    final TextEditingController titleController =
-        TextEditingController(text: reference.title);
-    final TextEditingController altTitleController =
-        TextEditingController(text: reference.altTitle ?? '');
-    final TextEditingController authorController =
-        TextEditingController(text: reference.author ?? '');
-    final TextEditingController seriesController =
-        TextEditingController(text: reference.series ?? '');
-    final TextEditingController volumeController =
-        TextEditingController(text: reference.volume ?? '');
-    final TextEditingController tagsController =
-        TextEditingController(text: reference.tags.join(', '));
-    final TextEditingController descriptionController =
-        TextEditingController(text: reference.description ?? '');
+    final TextEditingController titleController = TextEditingController(
+      text: reference.title,
+    );
+    final TextEditingController altTitleController = TextEditingController(
+      text: reference.altTitle ?? '',
+    );
+    final TextEditingController authorController = TextEditingController(
+      text: reference.author ?? '',
+    );
+    final TextEditingController seriesController = TextEditingController(
+      text: reference.series ?? '',
+    );
+    final TextEditingController volumeController = TextEditingController(
+      text: reference.volume ?? '',
+    );
+    final TextEditingController tagsController = TextEditingController(
+      text: reference.tags.join(', '),
+    );
+    final TextEditingController descriptionController = TextEditingController(
+      text: reference.description ?? '',
+    );
 
     final _MetadataFormResult? result = await showDialog<_MetadataFormResult>(
       context: context,
@@ -954,9 +999,7 @@ class _LibraryPageState extends State<LibraryPage> {
                       Expanded(
                         child: TextField(
                           controller: seriesController,
-                          decoration: const InputDecoration(
-                            labelText: 'Serie',
-                          ),
+                          decoration: const InputDecoration(labelText: 'Serie'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1097,7 +1140,8 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                        'Posicao vertical: ${coverAlignmentY.toStringAsFixed(2)}'),
+                      'Posicao vertical: ${coverAlignmentY.toStringAsFixed(2)}',
+                    ),
                     Slider(
                       value: coverAlignmentY,
                       min: -1,
@@ -1220,8 +1264,9 @@ class _LibraryPageState extends State<LibraryPage> {
         entries = entries.where((LibraryEntry entry) => entry.isFavorite);
         break;
       case _LibraryFilter.recent:
-        entries =
-            entries.where((LibraryEntry entry) => entry.lastOpenedAt != null);
+        entries = entries.where(
+          (LibraryEntry entry) => entry.lastOpenedAt != null,
+        );
         break;
     }
 
@@ -1239,9 +1284,9 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _handleImportShortcut() {
@@ -1430,9 +1475,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
               ),
             ),
-            const Positioned.fill(
-              child: AppWatermarkOverlay(),
-            ),
+            const Positioned.fill(child: AppWatermarkOverlay()),
           ],
         ),
       ),
@@ -1449,10 +1492,7 @@ class _LibraryPageState extends State<LibraryPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            'Sua biblioteca local',
-            style: theme.textTheme.headlineSmall,
-          ),
+          Text('Sua biblioteca local', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 10),
           Text(
             'Perfil ativo: ${widget.currentProfile.name}. Importe livros em pasta, texto, EPUB e PDF. Backup e troca de usuario ficam isolados por perfil.',
@@ -1735,9 +1775,11 @@ class _LibraryBookCard extends StatelessWidget {
                     ),
                     FilledButton.tonalIcon(
                       onPressed: onOpen,
-                      icon: Icon(missingContent
-                          ? Icons.file_upload_outlined
-                          : Icons.auto_stories_rounded),
+                      icon: Icon(
+                        missingContent
+                            ? Icons.file_upload_outlined
+                            : Icons.auto_stories_rounded,
+                      ),
                       label: Text(missingContent ? 'Importar' : 'Abrir'),
                     ),
                   ],

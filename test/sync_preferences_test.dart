@@ -79,4 +79,27 @@ void main() {
       throwsStateError,
     );
   });
+
+  test('automatic interval defaults to 5 min and persists supported values',
+      () async {
+    final MemoryAppStorage storage = MemoryAppStorage();
+    final SyncPreferencesService service = SyncPreferencesService(
+      profileId: 'principal',
+      storage: storage,
+    );
+    expect((await service.load()).syncIntervalMinutes, 5);
+    await service.save(
+      (await service.load()).copyWith(syncIntervalMinutes: 1),
+    );
+    expect((await service.load()).syncIntervalMinutes, 1);
+    await service.save(
+      (await service.load()).copyWith(syncIntervalMinutes: 15),
+    );
+    expect((await service.load()).syncIntervalMinutes, 15);
+    final SyncPreferences current = await service.load();
+    expect(
+      () => service.save(current.copyWith(syncIntervalMinutes: 2)),
+      throwsStateError,
+    );
+  });
 }

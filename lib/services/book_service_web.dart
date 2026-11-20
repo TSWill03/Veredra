@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:epubx/epubx.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -425,7 +426,7 @@ class BookService {
       );
     }
 
-    return _buildTextBook(
+    final Book book = await _buildTextBook(
       title: reference.title,
       format: reference.format,
       reference: reference.copyWith(assetPaths: existingPaths),
@@ -433,6 +434,36 @@ class BookService {
       id: reference.syncedBookId ??
           _buildFileBookId(reference.format, existingPaths),
     );
+    final String? syncedBookId = reference.syncedBookId;
+    if (syncedBookId == null) return book;
+    final String folder = sha256.convert(utf8.encode(syncedBookId)).toString();
+    final String? sidecar = await _storage.readString(
+      'profiles/$_activeProfileId/storage/synced_books/$folder/chapter_titles.json',
+    );
+    if (sidecar == null) return book;
+    try {
+      final dynamic titles = jsonDecode(sidecar);
+      if (titles is List<dynamic> &&
+          titles.length == existingPaths.length &&
+          titles.every(
+              (dynamic title) => title is String && title.trim().isNotEmpty)) {
+        return book.copyWith(
+          chapters: <Chapter>[
+            for (int i = 0; i < existingPaths.length; i++)
+              Chapter(
+                index: i,
+                sortNumber: i + 1,
+                title: titles[i] as String,
+                fileName: p.basename(existingPaths[i]),
+                path: existingPaths[i],
+              ),
+          ],
+        );
+      }
+    } on FormatException {
+      // A damaged optional title sidecar does not prevent offline reading.
+    }
+    return book;
   }
 
   Future<Book> loadEpubBook(String sourcePath) async {

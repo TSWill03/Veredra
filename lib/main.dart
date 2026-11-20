@@ -133,7 +133,7 @@ class VeredraApp extends StatefulWidget {
   State<VeredraApp> createState() => _VeredraAppState();
 }
 
-class _VeredraAppState extends State<VeredraApp> {
+class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
   final ProfileService _profileService = ProfileService();
   final BookService _bookService = BookService();
   final LibraryService _libraryService = LibraryService();
@@ -170,6 +170,7 @@ class _VeredraAppState extends State<VeredraApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ownsAccountController = widget.accountController == null;
     _accountController = widget.accountController ??
         AccountController(const LocalOnlyAuthGateway());
@@ -202,6 +203,13 @@ class _VeredraAppState extends State<VeredraApp> {
       _lastBookReference = lastBookReference;
       _isReady = true;
     });
+    // A restored sign-in may not emit an auth session change, so fetch the
+    // cloud state even when this is not a fresh login.
+    if (_accountController.user != null &&
+        _syncCoordinator?.preferences.enabled == true &&
+        _syncCoordinator?.preferences.automatic == true) {
+      unawaited(_syncCoordinator!.syncNow(stageSnapshot: true));
+    }
   }
 
   void _configureServicesForProfile(String profileId) {
@@ -324,7 +332,18 @@ class _VeredraAppState extends State<VeredraApp> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _accountController.user != null &&
+        _syncCoordinator?.preferences.enabled == true &&
+        _syncCoordinator?.preferences.automatic == true) {
+      unawaited(_syncCoordinator!.syncNow(stageSnapshot: true));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _accountController.removeListener(_handleAccountChanged);
     if (_ownsAccountController) {
       _accountController.dispose();

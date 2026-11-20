@@ -7,6 +7,8 @@ import 'package:pdfrx/pdfrx.dart';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/progress_service.dart';
+import '../services/sync/sync_coordinator.dart';
+import '../widgets/reader_sync_status_indicator.dart';
 
 class PdfReaderPage extends StatefulWidget {
   const PdfReaderPage({
@@ -14,11 +16,19 @@ class PdfReaderPage extends StatefulWidget {
     required this.book,
     required this.progressService,
     required this.onThemeModeChanged,
+    this.onProgressSaved,
+    this.onContinuousProgressSaved,
+    this.onFlushProgress,
+    this.syncCoordinator,
   });
 
   final Book book;
   final ProgressService progressService;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
+  final void Function()? onProgressSaved;
+  final void Function()? onContinuousProgressSaved;
+  final Future<void> Function()? onFlushProgress;
+  final SyncCoordinator? syncCoordinator;
 
   @override
   State<PdfReaderPage> createState() => _PdfReaderPageState();
@@ -31,6 +41,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   late final PdfDocumentRefFile _documentRef;
 
   Timer? _saveDebounce;
+  Timer? _pageCheckpoint;
+  bool _checkpointDirty = false;
   List<PdfOutlineNode> _outline = const <PdfOutlineNode>[];
   int _currentPage = 1;
   int _pageCount = 0;
@@ -42,6 +54,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _documentRef = PdfDocumentRefFile(widget.book.reference.primaryAssetPath!);
+    _pageCheckpoint = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_checkpointDirty) {
+        unawaited(_persistProgress(scheduleRemote: false));
+      }
+    });
     _loadSavedProgress();
   }
 
@@ -49,7 +66,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
-    unawaited(_persistProgress());
+    _pageCheckpoint?.cancel();
+    unawaited(_persistProgress(flushRemote: true));
     super.dispose();
   }
 
@@ -59,13 +77,14 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
-      unawaited(_persistProgress());
+      unawaited(_persistProgress(flushRemote: true));
     }
   }
 
   Future<void> _loadSavedProgress() async {
-    final ReadingProgress? progress =
-        await widget.progressService.loadProgress(widget.book.id);
+    final ReadingProgress? progress = await widget.progressService.loadProgress(
+      widget.book.id,
+    );
     if (!mounted || progress == null) {
       return;
     }
@@ -98,13 +117,22 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     setState(() {
       _currentPage = pageNumber;
     });
+    _checkpointDirty = true;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 500), () {
       unawaited(_persistProgress());
     });
   }
 
-  Future<void> _persistProgress() async {
+  Future<void> _persistProgress({
+    bool flushRemote = false,
+    bool scheduleRemote = true,
+  }) async {
+    if (!_checkpointDirty) {
+      if (flushRemote) await widget.onFlushProgress?.call();
+      return;
+    }
+    _checkpointDirty = false;
     await widget.progressService.saveProgress(
       widget.book.id,
       ReadingProgress(
@@ -114,6 +142,14 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         savedAt: DateTime.now(),
       ),
     );
+    if (scheduleRemote) {
+      widget.onProgressSaved?.call();
+    } else {
+      widget.onContinuousProgressSaved?.call();
+    }
+    if (flushRemote) {
+      await widget.onFlushProgress?.call();
+    }
   }
 
   Future<void> _goToPage(int pageNumber) async {
@@ -168,6 +204,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
               ],
             ),
             actions: <Widget>[
+              ReaderSyncStatusIndicator(coordinator: widget.syncCoordinator),
               IconButton(
                 tooltip: 'Sumario',
                 onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
@@ -270,7 +307,8 @@ class _PdfOutlineDrawer extends StatelessWidget {
                           selected: pageNumber == currentPage,
                           leading: pageNumber == null
                               ? const Icon(
-                                  Icons.subdirectory_arrow_right_rounded)
+                                  Icons.subdirectory_arrow_right_rounded,
+                                )
                               : CircleAvatar(
                                   radius: 16,
                                   child: Text('$pageNumber'),
@@ -309,10 +347,7 @@ class _PdfOutlineDrawer extends StatelessWidget {
 }
 
 class _OutlineEntry {
-  const _OutlineEntry({
-    required this.node,
-    required this.depth,
-  });
+  const _OutlineEntry({required this.node, required this.depth});
 
   final PdfOutlineNode node;
   final int depth;

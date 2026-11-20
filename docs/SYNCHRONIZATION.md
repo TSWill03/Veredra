@@ -37,7 +37,10 @@ interrompe a exclusao.
 8. filas corrompidas vao para quarentena, sem apagar a biblioteca.
 
 O dispositivo usa UUID aleatorio estavel, nao identificador fisico. Sync
-automatico e opcional a cada cinco minutos, alem da reconexao.
+automatico e opcional, por padrao a cada cinco minutos (configuravel em
+1, 5, 10 ou 15 min), alem de login, reconexao e retorno ao primeiro plano.
+O leitor salva o scroll local em debounce de 700 ms e tenta enviar apos 5 s
+de inatividade; ao sair/ocultar faz flush em melhor esforco.
 
 ## Sincronizacao de arquivos (beta)
 
@@ -71,10 +74,15 @@ grandes interrompidas reiniciam o pacote.
 
 - anotacoes/marcadores/destaques: merge por ID;
 - campos simples: maior `version`, depois `updated_at`;
-- progresso: maior capitulo e, dentro dele, maior progresso;
+- progresso: `savedAt` mais recente, mesmo se o usuario voltou capitulos;
+  checkpoints locais antigos nao sao reenviados ao abrir outro dispositivo;
+  RPC transacional e trigger protegem a atualizacao de posicoes obsoletas;
 - exclusoes: tombstone `deleted_at`, nao remocao silenciosa;
 - divergencias ambiguas: mantem dados locais e registra diagnostico sem
   conteudo do livro.
+
+Para arquitetura detalhada e checklist de testes entre Windows, Web e iOS,
+veja `docs/READING_CONTINUITY.md`.
 
 ## Estados de UI
 
@@ -95,3 +103,25 @@ livros a cada sync e nao implementa upload resumivel. Reconciliacao de exclusao
 individual de livros, quota detalhada por usuario, sincronizacao real multi-
 dispositivo e testes E2E hospedados devem ser validados antes de habilitar
 essa funcionalidade em producao.
+
+
+## Atualização da sincronização de posição — 20/11/2026
+
+O trecho anterior descreve o sincronizador geral acionado após inatividade.
+A partir desta revisão, a pausa de 5 s agenda **somente sincronização
+incremental do livro alterado**, sem serializar a biblioteca inteira e sem
+transferir ZIP de livro. Os checkpoints locais de 15 s permanecem; sessões
+longas acionam envio remoto em janela de 45 s. O ciclo geral manual e
+periódico continua separado para metadados, arquivos consentidos e reconexão.
+
+A fila persiste mudanças por perfil, serializa as operações de read-modify-write,
+evita revisões redundantes e aceita confirmação condicional por identidade e
+versão da operação. Um ACK antigo nunca remove checkpoint novo. O servidor
+continua fazendo UPSERT atômico de progresso via RPC com RLS e consentimento.
+A tabela de histórico sync_operations deixa de receber uma linha por progresso
+na nova versão cliente, mas os registros já existentes são preservados.
+
+A interface do leitor diferencia salvo localmente, pendente, sincronizando,
+sincronizado, offline, sessão expirada e erro em indicador discreto.
+O indicador representa o estado do coordenador, não uma garantia de sync
+em tempo real de outros dispositivos. Não habilitar deploy sem E2E real.

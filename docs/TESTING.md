@@ -72,3 +72,17 @@ GitHub Actions falha em format, analyze, teste, scanner, contrato de migrations,
 build/rota Web, APK debug, build Windows, PWA E2E, db lint ou pgTAP. Artefatos
 Web/APK/Windows e cobertura sao anexados. Nao existe deploy automatico em
 producao.
+
+
+## Regressões do checkpoint incremental — 20/11/2026
+
+Casos adicionais: sincronização de somente um livro sem snapshot completo,
+sem envio de arquivos e sem avanço do cursor de metadados; envio offline
+seguido de reconexão; enqueues concorrentes para livros distintos; ACK
+tardio de versão A sem apagar versão B; payload idêntico sem revisão nova;
+descarte condicionado ao savedAt atualmente pendente.
+
+Os testes são simulações locais e somente comprovam esses invariantes quando
+a suíte efetivamente passar. Login real e continuação Windows-Web-Android-iOS,
+RLS entre contas, latência, falhas abruptas e consumo de bateria exigem
+validação integrada e devem ser marcados como pendentes até execução.

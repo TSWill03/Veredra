@@ -148,6 +148,27 @@ class BookFileSyncService {
             'Nenhuma versao foi sobrescrita.',
           );
         }
+      } on StateError catch (error) {
+        // Only known safe messages are displayed; no paths, chapters or
+        // raw server responses are surfaced to the user.
+        const Set<String> safeReasons = <String>{
+          'Livro excede o limite de sincronizacao.',
+          'O pacote excede 95 MB apos compactacao.',
+          'Um capitulo excede o limite seguro.',
+          'Numero de capitulos invalido.',
+          'PDF sem arquivo local.',
+          'PDF indisponivel no dispositivo.',
+          'O arquivo remoto ultrapassa o limite seguro.',
+          'Checksum ou tamanho incorreto no download.',
+        };
+        final String detail = error.message.toString();
+        final String reason = safeReasons.contains(detail)
+            ? detail
+            : 'O pacote ou os arquivos locais precisam de verificacao.';
+        errors.add(
+          'Nao foi possivel transferir "${entry.title}": $reason '
+          'O arquivo local foi preservado.',
+        );
       } catch (_) {
         // Keep local data and continue with the next book. Diagnostics must
         // never contain chapters or raw cloud storage responses.
@@ -203,6 +224,8 @@ class BookFileSyncService {
         throw StateError('Numero de capitulos invalido.');
       }
       final List<Map<String, String>> chapterIndex = <Map<String, String>>[];
+      final Map<String, String> storedContentByHash = <String, String>{};
+      bool hasRepeatedContent = false;
       final List<String>? originalTitles = await _syncedChapterTitles(entry.id);
       for (int i = 0; i < chapters.length; i++) {
         final String name = 'chapters/${i.toString().padLeft(5, '0')}.txt';
@@ -211,9 +234,18 @@ class BookFileSyncService {
         if (bytes.length > maxChapterBytes) {
           throw StateError('Um capitulo excede o limite seguro.');
         }
-        addFile(name, bytes);
+        // Repeated content is referenced, not stored hundreds of times.
+        // Chapter titles and order remain independently represented.
+        final String checksum = sha256.convert(bytes).toString();
+        final String? earlierPath = storedContentByHash[checksum];
+        if (earlierPath == null) {
+          addFile(name, bytes);
+          storedContentByHash[checksum] = name;
+        } else {
+          hasRepeatedContent = true;
+        }
         chapterIndex.add(<String, String>{
-          'path': name,
+          'path': earlierPath ?? name,
           'title':
               originalTitles != null && originalTitles.length == chapters.length
                   ? originalTitles[i]
@@ -221,6 +253,11 @@ class BookFileSyncService {
         });
       }
       manifest['chapters'] = chapterIndex;
+      if (hasRepeatedContent) {
+        // Schema 2 permits multiple chapters to refer to one earlier file.
+        // Schema 1 stays byte-compatible with already uploaded books.
+        manifest['schema'] = 2;
+      }
     }
 
     final String? coverPath = entry.reference.coverPath;
@@ -271,7 +308,7 @@ class BookFileSyncService {
     }
     final dynamic decoded = jsonDecode(utf8.decode(_contents(manifestFile)));
     if (decoded is! Map<String, dynamic> ||
-        decoded['schema'] != 1 ||
+        (decoded['schema'] != 1 && decoded['schema'] != 2) ||
         decoded['bookId'] != entry.id ||
         decoded['format'] != entry.reference.format.name) {
       throw StateError('Manifesto incompatível com o livro.');
@@ -294,11 +331,23 @@ class BookFileSyncService {
           rawChapters.length > maxChapters) {
         throw StateError('Indice de capitulos invalido.');
       }
+      final Set<String> restoredFiles = <String>{};
       for (int i = 0; i < rawChapters.length; i++) {
         final dynamic raw = rawChapters[i];
-        final String fileName = 'chapters/${i.toString().padLeft(5, '0')}.txt';
-        if (raw is! Map<String, dynamic> ||
-            raw['path'] != fileName ||
+        if (raw is! Map<String, dynamic>) {
+          throw StateError('Pacote com capitulos incompletos.');
+        }
+        final String? fileName = raw['path'] as String?;
+        final String expectedName =
+            'chapters/${i.toString().padLeft(5, '0')}.txt';
+        final int? sourceIndex = fileName != null &&
+                RegExp(r'^chapters/[0-9]{5}\.txt$').hasMatch(fileName)
+            ? int.tryParse(fileName.substring(9, 14))
+            : null;
+        if (fileName == null ||
+            (decoded['schema'] == 1 && fileName != expectedName) ||
+            (decoded['schema'] == 2 &&
+                (sourceIndex == null || sourceIndex > i)) ||
             files[fileName] == null ||
             files[fileName]!.size > maxChapterBytes) {
           throw StateError('Pacote com capitulos incompletos.');
@@ -307,17 +356,15 @@ class BookFileSyncService {
         if (title.isEmpty || title.length > 400) {
           throw StateError('Titulo de capitulo invalido.');
         }
-        // Keep readable chapter names in the UI while preserving the original
-        // manifest titles for deterministic checksum comparison on next sync.
         originalChapterTitles.add(title);
-        final String safeTitle = _safeChapterTitle(title);
-        final String localFileName =
-            '${i.toString().padLeft(5, '0')} - $safeTitle.txt';
-        final String key = '$root/chapters/$localFileName';
-        await _storage.writeString(
-          key,
-          utf8.decode(_contents(files[fileName]!)),
-        );
+        // Store each unique payload once; preserve repeated chapter references.
+        final String key = '$root/$fileName';
+        if (restoredFiles.add(fileName)) {
+          await _storage.writeString(
+            key,
+            utf8.decode(_contents(files[fileName]!)),
+          );
+        }
         paths.add('$_virtualPrefix$key');
       }
     }
@@ -376,14 +423,6 @@ class BookFileSyncService {
       // Invalid sidecar: reconstruct from local chapter names.
     }
     return null;
-  }
-
-  String _safeChapterTitle(String title) {
-    final String cleaned =
-        title.replaceAll(RegExp(r'[\\/:*?"<>|\\x00-\\x1f]'), '_').trim();
-    return cleaned.isEmpty
-        ? 'Capitulo'
-        : cleaned.substring(0, cleaned.length < 72 ? cleaned.length : 72);
   }
 
   Future<Uint8List?> _readAssetBytes(String path) async {

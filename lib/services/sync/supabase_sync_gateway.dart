@@ -31,17 +31,14 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
     required String platform,
   }) async {
     try {
-      await _client.from('devices').upsert(
-        <String, dynamic>{
-          'id': deviceId,
-          'user_id': userId,
-          'name': name,
-          'platform': platform,
-          'last_seen_at': DateTime.now().toUtc().toIso8601String(),
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'id',
-      );
+      await _client.from('devices').upsert(<String, dynamic>{
+        'id': deviceId,
+        'user_id': userId,
+        'name': name,
+        'platform': platform,
+        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'id');
     } on AuthException catch (_) {
       throw const SyncRemoteException(
         'A sessao expirou. Entre novamente.',
@@ -49,6 +46,67 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
       );
     } on PostgrestException catch (_) {
       throw const SyncRemoteException('O dispositivo nao pode ser registrado.');
+    }
+  }
+
+  @override
+  Future<List<RemoteSyncRecord>> pullProgress({required String userId}) =>
+      _readProgress(userId: userId);
+
+  @override
+  Future<List<RemoteSyncRecord>> pullProgressForBook({
+    required String userId,
+    required String bookId,
+  }) =>
+      _readProgress(userId: userId, bookId: bookId);
+
+  Future<List<RemoteSyncRecord>> _readProgress({
+    required String userId,
+    String? bookId,
+  }) async {
+    if (_client.auth.currentUser?.id != userId) {
+      throw const SyncRemoteException(
+        'A sessao mudou durante a sincronizacao.',
+        sessionExpired: true,
+      );
+    }
+    try {
+      final query = _client
+          .from('reading_progress')
+          .select('local_id,data,updated_at,deleted_at,version')
+          .eq('user_id', userId);
+      final List<dynamic> rows = bookId == null
+          ? await query.order('updated_at')
+          : await query.eq('local_id', bookId).order('updated_at');
+      final List<RemoteSyncRecord> result = <RemoteSyncRecord>[];
+      for (final dynamic raw in rows) {
+        if (raw is! Map<String, dynamic>) continue;
+        final String bookId = raw['local_id'] as String? ?? '';
+        if (bookId.isEmpty) continue;
+        result.add(
+          RemoteSyncRecord(
+            entityType: SyncEntityType.progress,
+            entityId: bookId,
+            payload: raw['data'] is Map<String, dynamic>
+                ? Map<String, dynamic>.from(raw['data'] as Map<String, dynamic>)
+                : <String, dynamic>{},
+            updatedAt: DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+            deletedAt: DateTime.tryParse(raw['deleted_at'] as String? ?? ''),
+            version: (raw['version'] as num?)?.toInt() ?? 1,
+          ),
+        );
+      }
+      return result;
+    } on AuthException {
+      throw const SyncRemoteException(
+        'A sessao expirou. Entre novamente.',
+        sessionExpired: true,
+      );
+    } catch (_) {
+      throw const SyncRemoteException(
+        'Falha ao consultar o progresso remoto de leitura.',
+      );
     }
   }
 
@@ -73,12 +131,27 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
     };
 
     try {
-      await _client.from(table).upsert(
-            row,
-            onConflict: 'user_id,local_id',
-          );
-      await _client.from('sync_operations').upsert(
-        <String, dynamic>{
+      if (operation.entityType == SyncEntityType.progress) {
+        // The server compares savedAt atomically: an old device cannot
+        // overwrite a newer reading checkpoint after our initial pull.
+        await _client.rpc(
+          'veredra_upsert_progress_if_newer',
+          params: <String, dynamic>{
+            'p_user_id': operation.userId,
+            'p_device_id': operation.deviceId,
+            'p_local_id': operation.entityId,
+            'p_remote_id': row['id'],
+            'p_data': data,
+          },
+        );
+      } else {
+        await _client.from(table).upsert(row, onConflict: 'user_id,local_id');
+      }
+      // The progress RPC is already atomic and authoritative. Do not append
+      // an extra historical sync_operations row for every scroll checkpoint:
+      // those rows are never consumed by the client and grow indefinitely.
+      if (operation.entityType != SyncEntityType.progress) {
+        await _client.from('sync_operations').upsert(<String, dynamic>{
           'id': operation.id,
           'user_id': operation.userId,
           'device_id': operation.deviceId,
@@ -91,9 +164,8 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
           },
           'created_at': operation.createdAt.toUtc().toIso8601String(),
           'processed_at': DateTime.now().toUtc().toIso8601String(),
-        },
-        onConflict: 'id',
-      );
+        }, onConflict: 'id');
+      }
     } on AuthException catch (_) {
       throw const SyncRemoteException(
         'A sessao expirou. Entre novamente.',
@@ -142,9 +214,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
               updatedAt:
                   DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
                       DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-              deletedAt: DateTime.tryParse(
-                raw['deleted_at'] as String? ?? '',
-              ),
+              deletedAt: DateTime.tryParse(raw['deleted_at'] as String? ?? ''),
               version: (raw['version'] as num?)?.toInt() ?? 1,
             ),
           );
@@ -169,9 +239,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   ) {
     switch (type) {
       case SyncEntityType.profile:
-        return <String, dynamic>{
-          'display_name': data['name'] ?? 'Usuario',
-        };
+        return <String, dynamic>{'display_name': data['name'] ?? 'Usuario'};
       case SyncEntityType.preferences:
         return <String, dynamic>{
           'profile_local_id': data['profileId'] ?? 'principal',

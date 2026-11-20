@@ -19,7 +19,7 @@ class ReadingProgress {
       'chapterIndex': chapterIndex,
       'chapterOffset': chapterOffset,
       'chapterProgress': chapterProgress,
-      'savedAt': savedAt.toIso8601String(),
+      'savedAt': savedAt.toUtc().toIso8601String(),
     };
   }
 

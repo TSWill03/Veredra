@@ -22,7 +22,9 @@ import '../services/bookmark_service.dart';
 import '../services/book_service.dart';
 import '../services/progress_service.dart';
 import '../services/reading_stats_service.dart';
+import '../services/sync/sync_coordinator.dart';
 import '../widgets/reader_settings.dart';
+import '../widgets/reader_sync_status_indicator.dart';
 
 class ReaderPage extends StatefulWidget {
   const ReaderPage({
@@ -40,6 +42,10 @@ class ReaderPage extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.onFontSizeChanged,
     required this.onReaderFontPresetChanged,
+    this.onProgressSaved,
+    this.onContinuousProgressSaved,
+    this.onFlushProgress,
+    this.syncCoordinator,
   });
 
   final Book book;
@@ -55,6 +61,10 @@ class ReaderPage extends StatefulWidget {
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(double) onFontSizeChanged;
   final Future<void> Function(ReaderFontPreset) onReaderFontPresetChanged;
+  final void Function()? onProgressSaved;
+  final void Function()? onContinuousProgressSaved;
+  final Future<void> Function()? onFlushProgress;
+  final SyncCoordinator? syncCoordinator;
 
   @override
   State<ReaderPage> createState() => _ReaderPageState();
@@ -75,6 +85,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   int? _pendingSecondaryHighlightChapter;
 
   Timer? _saveDebounce;
+  Timer? _continuousScrollCheckpoint;
+  bool _checkpointDirty = false;
   List<ReaderAnnotation> _annotations = <ReaderAnnotation>[];
   ReaderPreferences _preferences = ReaderPreferences.defaults;
   List<ReaderBookmark> _bookmarks = <ReaderBookmark>[];
@@ -105,12 +117,27 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       fontPreset: widget.initialReaderFontPreset,
     );
     _scrollController.addListener(_handleScroll);
+    // Continuous scroll can keep the 700ms debounce from ever firing.
+    // Persist locally every 15s when there was interaction; the coordinator
+    // still controls the configured network interval independently.
+    _continuousScrollCheckpoint = Timer.periodic(const Duration(seconds: 15), (
+      _,
+    ) {
+      if (_checkpointDirty) {
+        unawaited(_persistProgress(scheduleRemote: false));
+      }
+    });
     _bootstrapReader();
   }
 
   @override
   void dispose() {
+    // Capture before disposing the scroll controller. The previous code
+    // disposed it first, so a forced checkpoint could be lost on navigation.
+    final ReadingProgress? closingPosition =
+        _checkpointDirty ? _captureCurrentProgress() : null;
     WidgetsBinding.instance.removeObserver(this);
+    _continuousScrollCheckpoint?.cancel();
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
@@ -119,7 +146,11 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       notifier.dispose();
     }
     _saveDebounce?.cancel();
-    unawaited(_persistProgress());
+    if (closingPosition != null) {
+      unawaited(_saveCapturedProgress(closingPosition, flushRemote: true));
+    } else {
+      unawaited(widget.onFlushProgress?.call() ?? Future<void>.value());
+    }
     unawaited(_flushReadingSession());
     super.dispose();
   }
@@ -130,7 +161,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
-      unawaited(_persistProgress());
+      unawaited(_persistProgress(flushRemote: true));
       unawaited(_flushReadingSession());
     } else if (state == AppLifecycleState.resumed) {
       _resumeReadingSession();
@@ -475,20 +506,46 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   void _scheduleProgressSave() {
+    _checkpointDirty = true;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), () {
       unawaited(_persistProgress());
     });
   }
 
-  Future<void> _persistProgress() async {
-    final ReadingProgress? progress = _captureCurrentProgress();
-    if (progress == null) {
+  Future<void> _persistProgress({
+    bool flushRemote = false,
+    bool scheduleRemote = true,
+  }) async {
+    if (!_checkpointDirty) {
+      if (flushRemote) await widget.onFlushProgress?.call();
       return;
     }
+    final ReadingProgress? progress = _captureCurrentProgress();
+    if (progress == null) return;
+    await _saveCapturedProgress(
+      progress,
+      flushRemote: flushRemote,
+      scheduleRemote: scheduleRemote,
+    );
+  }
 
+  Future<void> _saveCapturedProgress(
+    ReadingProgress progress, {
+    bool flushRemote = false,
+    bool scheduleRemote = true,
+  }) async {
+    _checkpointDirty = false;
     _currentChapterIndex = progress.chapterIndex;
     await widget.progressService.saveProgress(widget.book.id, progress);
+    if (scheduleRemote) {
+      widget.onProgressSaved?.call();
+    } else {
+      widget.onContinuousProgressSaved?.call();
+    }
+    if (flushRemote) {
+      await widget.onFlushProgress?.call();
+    }
   }
 
   Future<void> _restoreSavedPosition(
@@ -609,8 +666,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
     for (int index = start; index <= end; index++) {
       selectedContents[index] = _chapterContents[index] ??
-          await widget.bookService
-              .readChapterContent(widget.book.chapters[index]);
+          await widget.bookService.readChapterContent(
+            widget.book.chapters[index],
+          );
     }
 
     if (!mounted) {
@@ -829,8 +887,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             return AlertDialog(
-              title:
-                  Text(existing == null ? 'Nova anotacao' : 'Editar anotacao'),
+              title: Text(
+                existing == null ? 'Nova anotacao' : 'Editar anotacao',
+              ),
               content: SizedBox(
                 width: 540,
                 child: SingleChildScrollView(
@@ -928,15 +987,17 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   Future<void> _deleteAnnotation(ReaderAnnotation annotation) async {
-    await widget.annotationService
-        .removeAnnotation(widget.book.id, annotation.id);
+    await widget.annotationService.removeAnnotation(
+      widget.book.id,
+      annotation.id,
+    );
     await _refreshAnnotations();
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Anotacao removida.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Anotacao removida.')));
   }
 
   Future<void> _editAnnotation(ReaderAnnotation annotation) async {
@@ -1089,9 +1150,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Marcador salvo.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Marcador salvo.')));
   }
 
   Future<void> _deleteBookmark(ReaderBookmark bookmark) async {
@@ -1100,9 +1161,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Marcador removido.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Marcador removido.')));
   }
 
   Future<void> _jumpToBookmark(ReaderBookmark bookmark) async {
@@ -1123,8 +1184,10 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
   List<ReaderAnnotation> _annotationsForChapter(int chapterIndex) {
     return _annotations
-        .where((ReaderAnnotation annotation) =>
-            annotation.chapterIndex == chapterIndex)
+        .where(
+          (ReaderAnnotation annotation) =>
+              annotation.chapterIndex == chapterIndex,
+        )
         .toList(growable: false);
   }
 
@@ -1158,10 +1221,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
       if (cursor < start) {
         spans.add(
-          TextSpan(
-            text: content.substring(cursor, start),
-            style: baseStyle,
-          ),
+          TextSpan(text: content.substring(cursor, start), style: baseStyle),
         );
       }
 
@@ -1182,12 +1242,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     }
 
     if (cursor < content.length) {
-      spans.add(
-        TextSpan(
-          text: content.substring(cursor),
-          style: baseStyle,
-        ),
-      );
+      spans.add(TextSpan(text: content.substring(cursor), style: baseStyle));
     }
 
     return spans;
@@ -1208,14 +1263,16 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
               _preferences = preferences;
             });
             unawaited(
-                widget.progressService.saveReaderPreferences(preferences));
+              widget.progressService.saveReaderPreferences(preferences),
+            );
             unawaited(widget.onFontSizeChanged(preferences.fontSize));
             unawaited(widget.onReaderFontPresetChanged(preferences.fontPreset));
             _scheduleProgressSave();
           },
           onDarkModeChanged: (bool enabled) {
             unawaited(
-                _applyThemeMode(enabled ? ThemeMode.dark : ThemeMode.light));
+              _applyThemeMode(enabled ? ThemeMode.dark : ThemeMode.light),
+            );
           },
         );
       },
@@ -1588,6 +1645,9 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                     ],
                   ),
                   actions: <Widget>[
+                    ReaderSyncStatusIndicator(
+                      coordinator: widget.syncCoordinator,
+                    ),
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Center(
@@ -1603,7 +1663,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                           child: Text(
                             '${(progressValue * 100).round()}%',
                             style: TextStyle(
-                                color: backgroundPreset.primaryTextColor),
+                              color: backgroundPreset.primaryTextColor,
+                            ),
                           ),
                         ),
                       ),
@@ -1770,9 +1831,7 @@ class _ChapterSearchDelegate extends SearchDelegate<Chapter?> {
           }).toList(growable: false);
 
     if (matches.isEmpty) {
-      return const Center(
-        child: Text('Nenhum capitulo encontrado.'),
-      );
+      return const Center(child: Text('Nenhum capitulo encontrado.'));
     }
 
     return ListView.builder(
@@ -1798,10 +1857,7 @@ class _ChapterSearchDelegate extends SearchDelegate<Chapter?> {
 }
 
 class _BookContentSearchDelegate extends SearchDelegate<int?> {
-  _BookContentSearchDelegate({
-    required this.book,
-    required this.search,
-  });
+  _BookContentSearchDelegate({required this.book, required this.search});
 
   final Book book;
   final Future<List<BookSearchMatch>> Function(String query) search;
@@ -1846,8 +1902,10 @@ class _BookContentSearchDelegate extends SearchDelegate<int?> {
   Widget _buildAsyncResults() {
     return FutureBuilder<List<BookSearchMatch>>(
       future: search(query),
-      builder: (BuildContext context,
-          AsyncSnapshot<List<BookSearchMatch>> snapshot) {
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<List<BookSearchMatch>> snapshot,
+      ) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -1855,9 +1913,7 @@ class _BookContentSearchDelegate extends SearchDelegate<int?> {
         final List<BookSearchMatch> matches =
             snapshot.data ?? const <BookSearchMatch>[];
         if (matches.isEmpty) {
-          return const Center(
-            child: Text('Nenhum trecho encontrado.'),
-          );
+          return const Center(child: Text('Nenhum trecho encontrado.'));
         }
 
         return ListView.builder(

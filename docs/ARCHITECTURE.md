@@ -84,3 +84,17 @@ RLS e grants restringem cada tabela a `auth.uid() = user_id`. O bucket
 
 CQRS nao e necessario para a beta; somente indexacao/busca futura pode justificar
 um read model separado.
+
+
+## Caminho de progresso incremental (20/11/2026)
+
+Fluxo: ReaderPage / PdfReaderPage -> ProgressService.saveProgress ->
+SyncCoordinator.syncProgress(bookId) -> SyncQueue ->
+SupabaseSyncGateway.pullProgressForBook + RPC de progresso -> merge local.
+
+Este caminho somente trata o livro selecionado, preserva primeiro a cópia
+local e enfileira checkpoint durável, confirma por revisão exata e não altera
+lastSyncAt (cursor dos demais metadados). O fluxo geral permanece para
+reconciliação de biblioteca, marcadores, anotações e arquivos consentidos.
+A política de identidade de livro utiliza o bookId sincronizado, jamais o
+caminho absoluto no sistema do usuário.

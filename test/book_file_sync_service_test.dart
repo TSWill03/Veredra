@@ -1,8 +1,12 @@
 // Signature: dev.tswicolly03
+import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:archive/archive.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:txt_webnovel_reader/models/book.dart';
 import 'package:txt_webnovel_reader/models/book_format.dart';
 import 'package:txt_webnovel_reader/models/book_reference.dart';
 import 'package:txt_webnovel_reader/models/library_entry.dart';
@@ -151,6 +155,156 @@ void main() {
     expect(again.errors, isEmpty);
     expect(again.uploaded, 0);
     expect(cloud.uploaded, 1);
+  });
+
+  test('deduplicates repeated EPUB chapters and preserves original titles',
+      () async {
+    final MemoryAppStorage source = MemoryAppStorage();
+    final MemoryAppStorage target = MemoryAppStorage();
+    final BookService sourceBooks = BookService(storage: source);
+    final BookService targetBooks = BookService(storage: target);
+    final LibraryService sourceLibrary = LibraryService(storage: source);
+    final LibraryService targetLibrary = LibraryService(storage: target);
+    final FakeBookFileGateway cloud = FakeBookFileGateway();
+
+    final List<String> titles = <String>[
+      'Capitulo um',
+      'Capitulo dois',
+      'Capitulo tres',
+    ];
+    final List<String> paths = <String>[];
+    for (int i = 0; i < titles.length; i++) {
+      final String key =
+          'profiles/principal/storage/books/repeated/${i + 1} - ${titles[i]}.txt';
+      await source.writeString(key, 'Texto completo repetido do EPUB.');
+      paths.add('veredra://$key');
+    }
+    await sourceLibrary.replaceEntries(<LibraryEntry>[
+      _entry(
+        id: 'epub-duplicated',
+        count: titles.length,
+        reference: BookReference(
+          title: 'EPUB com TOC repetido',
+          format: BookFormat.epub,
+          sourceLabel: 'EPUB convertido',
+          assetPaths: paths,
+        ),
+      ),
+    ]);
+    await targetLibrary.replaceEntries(<LibraryEntry>[
+      _entry(
+        id: 'epub-duplicated',
+        count: titles.length,
+        reference: const BookReference(
+          title: 'EPUB com TOC repetido',
+          format: BookFormat.epub,
+          sourceLabel: 'Metadados sincronizados',
+        ),
+      ),
+    ]);
+
+    final BookFileSyncService from = BookFileSyncService(
+      profileId: 'principal',
+      libraryService: sourceLibrary,
+      bookService: sourceBooks,
+      remote: cloud,
+      storage: source,
+    );
+    final BookFileSyncService to = BookFileSyncService(
+      profileId: 'principal',
+      libraryService: targetLibrary,
+      bookService: targetBooks,
+      remote: cloud,
+      storage: target,
+    );
+    final BookFileSyncReport uploaded = await from.synchronize(
+      userId: 'user-1',
+      deviceId: 'first-device',
+    );
+    expect(uploaded.errors, isEmpty);
+    expect(uploaded.uploaded, 1);
+    final RemoteBookAsset asset = cloud.records['epub-duplicated']!;
+    final Archive zip =
+        ZipDecoder().decodeBytes(cloud.blobs[asset.storagePath]!);
+    expect(zip.files.where((file) => file.name.startsWith('chapters/')),
+        hasLength(1));
+    final ArchiveFile manifest =
+        zip.files.singleWhere((file) => file.name == 'manifest.json');
+    final Map<String, dynamic> metadata = jsonDecode(
+      utf8.decode(manifest.content as List<int>),
+    ) as Map<String, dynamic>;
+    expect(metadata['schema'], 2);
+    expect((metadata['chapters'] as List<dynamic>).length, titles.length);
+
+    final BookFileSyncReport downloaded = await to.synchronize(
+      userId: 'user-1',
+      deviceId: 'second-device',
+    );
+    expect(downloaded.errors, isEmpty);
+    expect(downloaded.downloaded, 1);
+    final LibraryEntry restored = (await targetLibrary.loadEntries()).single;
+    expect(restored.reference.assetPaths, hasLength(3));
+    expect(restored.reference.assetPaths.toSet(), hasLength(1));
+    final Book book = await targetBooks.reopenBook(restored.reference);
+    final Book original = await sourceBooks.reopenBook(
+      (await sourceLibrary.loadEntries()).single.reference,
+    );
+    expect(
+      book.chapters.map((chapter) => chapter.title).toList(),
+      original.chapters.map((chapter) => chapter.title).toList(),
+    );
+    expect(book.chapters, hasLength(3));
+    for (final chapter in book.chapters) {
+      expect(await targetBooks.readChapterContent(chapter),
+          'Texto completo repetido do EPUB.');
+    }
+    final BookFileSyncReport again = await to.synchronize(
+      userId: 'user-1',
+      deviceId: 'second-device',
+    );
+    expect(again.errors, isEmpty);
+    expect(again.uploaded, 0);
+    expect(cloud.uploaded, 1);
+  });
+
+  test('repeated chapters beyond the old 128 MiB raw limit fit when unique',
+      () async {
+    final MemoryAppStorage storage = MemoryAppStorage();
+    final LibraryService library = LibraryService(storage: storage);
+    final FakeBookFileGateway cloud = FakeBookFileGateway();
+    const String key = 'profiles/principal/storage/books/large/one.txt';
+    await storage.writeString(
+      key,
+      List<String>.filled(1024 * 1024, 'X').join(),
+    );
+    const int repeats = 130;
+    await library.replaceEntries(<LibraryEntry>[
+      _entry(
+        id: 'large-repeated-epub',
+        count: repeats,
+        reference: BookReference(
+          title: 'EPUB com repeticoes volumosas',
+          format: BookFormat.epub,
+          sourceLabel: 'EPUB convertido',
+          assetPaths: List<String>.filled(repeats, 'veredra://$key'),
+        ),
+      ),
+    ]);
+    final BookFileSyncService sync = BookFileSyncService(
+      profileId: 'principal',
+      libraryService: library,
+      bookService: BookService(storage: storage),
+      remote: cloud,
+      storage: storage,
+    );
+    final BookFileSyncReport result = await sync.synchronize(
+      userId: 'user-1',
+      deviceId: 'first-device',
+    );
+    expect(result.errors, isEmpty);
+    expect(result.uploaded, 1);
+    final RemoteBookAsset asset = cloud.records['large-repeated-epub']!;
+    expect(asset.sizeBytes, lessThan(2 * 1024 * 1024));
   });
 
   test('a corrupted download cannot replace a metadata-only entry', () async {
