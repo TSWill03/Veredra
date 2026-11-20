@@ -7,7 +7,7 @@ import 'sync_models.dart';
 
 class SupabaseSyncGateway implements RemoteSyncGateway {
   SupabaseSyncGateway(this._client, {Uuid? uuid})
-    : _uuid = uuid ?? const Uuid();
+      : _uuid = uuid ?? const Uuid();
 
   final SupabaseClient _client;
   final Uuid _uuid;
@@ -57,7 +57,8 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   Future<List<RemoteSyncRecord>> pullProgressForBook({
     required String userId,
     required String bookId,
-  }) => _readProgress(userId: userId, bookId: bookId);
+  }) =>
+      _readProgress(userId: userId, bookId: bookId);
 
   Future<List<RemoteSyncRecord>> _readProgress({
     required String userId,
@@ -89,8 +90,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
             payload: raw['data'] is Map<String, dynamic>
                 ? Map<String, dynamic>.from(raw['data'] as Map<String, dynamic>)
                 : <String, dynamic>{},
-            updatedAt:
-                DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
+            updatedAt: DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
             deletedAt: DateTime.tryParse(raw['deleted_at'] as String? ?? ''),
             version: (raw['version'] as num?)?.toInt() ?? 1,
@@ -213,7 +213,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
                   : <String, dynamic>{},
               updatedAt:
                   DateTime.tryParse(raw['updated_at'] as String? ?? '') ??
-                  DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+                      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
               deletedAt: DateTime.tryParse(raw['deleted_at'] as String? ?? ''),
               version: (raw['version'] as num?)?.toInt() ?? 1,
             ),
@@ -247,8 +247,8 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
       case SyncEntityType.book:
         final Map<String, dynamic> reference =
             data['reference'] is Map<String, dynamic>
-            ? data['reference'] as Map<String, dynamic>
-            : <String, dynamic>{};
+                ? data['reference'] as Map<String, dynamic>
+                : <String, dynamic>{};
         return <String, dynamic>{
           'profile_local_id': data['profileId'] ?? 'principal',
           'title': reference['title'] ?? 'Livro',
@@ -274,7 +274,7 @@ class SupabaseSyncGateway implements RemoteSyncGateway {
   }
 
   String _remoteId(SyncOperation operation) => _uuid.v5(
-    Namespace.url.value,
-    '${operation.userId}:${operation.entityType.name}:${operation.entityId}',
-  );
+        Namespace.url.value,
+        '${operation.userId}:${operation.entityType.name}:${operation.entityId}',
+      );
 }

@@ -134,9 +134,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   void dispose() {
     // Capture before disposing the scroll controller. The previous code
     // disposed it first, so a forced checkpoint could be lost on navigation.
-    final ReadingProgress? closingPosition = _checkpointDirty
-        ? _captureCurrentProgress()
-        : null;
+    final ReadingProgress? closingPosition =
+        _checkpointDirty ? _captureCurrentProgress() : null;
     WidgetsBinding.instance.removeObserver(this);
     _continuousScrollCheckpoint?.cancel();
     _scrollController
@@ -171,14 +170,14 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
   Future<void> _bootstrapReader() async {
     try {
-      final ReaderPreferences savedPreferences = await widget.progressService
-          .loadReaderPreferences();
-      final List<ReaderAnnotation> annotations = await widget.annotationService
-          .loadAnnotations(widget.book.id);
-      final List<ReaderBookmark> bookmarks = await widget.bookmarkService
-          .loadBookmarks(widget.book.id);
-      final ReadingProgress? savedProgress = await widget.progressService
-          .loadProgress(widget.book.id);
+      final ReaderPreferences savedPreferences =
+          await widget.progressService.loadReaderPreferences();
+      final List<ReaderAnnotation> annotations =
+          await widget.annotationService.loadAnnotations(widget.book.id);
+      final List<ReaderBookmark> bookmarks =
+          await widget.bookmarkService.loadBookmarks(widget.book.id);
+      final ReadingProgress? savedProgress =
+          await widget.progressService.loadProgress(widget.book.id);
       final int preferredChapterIndex =
           widget.initialChapterIndex ?? savedProgress?.chapterIndex ?? 0;
       final int initialChapterIndex = math.min(
@@ -379,9 +378,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
         _chapterKeys[dropIndex]?.currentContext;
     final RenderBox? chapterBox =
         chapterContext?.findRenderObject() as RenderBox?;
-    final double currentOffset = _scrollController.hasClients
-        ? _scrollController.offset
-        : 0;
+    final double currentOffset =
+        _scrollController.hasClients ? _scrollController.offset : 0;
     final double removedExtent =
         (chapterBox?.size.height ?? 0) + _chapterCardSpacing;
 
@@ -667,8 +665,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     final Map<int, String> selectedContents = <int, String>{};
 
     for (int index = start; index <= end; index++) {
-      selectedContents[index] =
-          _chapterContents[index] ??
+      selectedContents[index] = _chapterContents[index] ??
           await widget.bookService.readChapterContent(
             widget.book.chapters[index],
           );
@@ -724,8 +721,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshBookmarks() async {
-    final List<ReaderBookmark> bookmarks = await widget.bookmarkService
-        .loadBookmarks(widget.book.id);
+    final List<ReaderBookmark> bookmarks =
+        await widget.bookmarkService.loadBookmarks(widget.book.id);
     if (!mounted) {
       return;
     }
@@ -739,8 +736,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshAnnotations() async {
-    final List<ReaderAnnotation> annotations = await widget.annotationService
-        .loadAnnotations(widget.book.id);
+    final List<ReaderAnnotation> annotations =
+        await widget.annotationService.loadAnnotations(widget.book.id);
     if (!mounted) {
       return;
     }
@@ -773,8 +770,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
   }
 
   _ChapterSelectionSnapshot? _selectionSnapshotForChapter(int chapterIndex) {
-    final String selectedText = (_selectedTextByChapter[chapterIndex] ?? '')
-        .trim();
+    final String selectedText =
+        (_selectedTextByChapter[chapterIndex] ?? '').trim();
     final SelectedContentRange? range = _selectedRangeForChapter(chapterIndex);
     if (selectedText.isEmpty ||
         range == null ||
@@ -795,9 +792,8 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
       return;
     }
 
-    final List<SelectionListenerNotifier> staleNotifiers = _selectionNotifiers
-        .values
-        .toList(growable: false);
+    final List<SelectionListenerNotifier> staleNotifiers =
+        _selectionNotifiers.values.toList(growable: false);
     _selectionNotifiers.clear();
 
     setState(() {
@@ -963,8 +959,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                     final DateTime now = DateTime.now();
                     Navigator.of(context).pop(
                       ReaderAnnotation(
-                        id:
-                            existing?.id ??
+                        id: existing?.id ??
                             now.microsecondsSinceEpoch.toString(),
                         bookId: widget.book.id,
                         chapterIndex: chapterIndex,
@@ -1045,8 +1040,7 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
 
   Future<void> _showAddBookmarkDialog([ReaderBookmark? existing]) async {
     final ReadingProgress? progress = _captureCurrentProgress();
-    final int chapterIndex =
-        existing?.chapterIndex ??
+    final int chapterIndex = existing?.chapterIndex ??
         progress?.chapterIndex ??
         _currentChapterIndex;
     final Chapter chapter = widget.book.chapters[chapterIndex];
@@ -1121,14 +1115,12 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                     final DateTime now = DateTime.now();
                     Navigator.of(context).pop(
                       ReaderBookmark(
-                        id:
-                            existing?.id ??
+                        id: existing?.id ??
                             now.microsecondsSinceEpoch.toString(),
                         bookId: widget.book.id,
                         chapterIndex: chapterIndex,
                         chapterTitle: chapter.title,
-                        chapterProgress:
-                            existing?.chapterProgress ??
+                        chapterProgress: existing?.chapterProgress ??
                             progress?.chapterProgress ??
                             0,
                         createdAt: existing?.createdAt ?? now,
@@ -1357,14 +1349,12 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
         LogicalKeyboardKey.keyF,
         control: true,
         shift: true,
-      ): () =>
-          unawaited(_openChapterSearch()),
+      ): () => unawaited(_openChapterSearch()),
       const SingleActivator(
         LogicalKeyboardKey.keyF,
         meta: true,
         shift: true,
-      ): () =>
-          unawaited(_openChapterSearch()),
+      ): () => unawaited(_openChapterSearch()),
       const SingleActivator(LogicalKeyboardKey.keyB, control: true): () =>
           unawaited(_showAddBookmarkDialog()),
       const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () =>
@@ -1427,14 +1417,13 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
     final double progressValue = widget.book.chapterCount == 0
         ? 0
         : (_currentChapterIndex + 1) / widget.book.chapterCount;
-    final TextStyle readerTextStyle = _preferences.fontPreset
-        .applyTo(theme.textTheme.bodyLarge)
-        .copyWith(
-          fontSize: _preferences.fontSize,
-          height: _preferences.lineHeight,
-          letterSpacing: 0.15,
-          color: backgroundPreset.primaryTextColor,
-        );
+    final TextStyle readerTextStyle =
+        _preferences.fontPreset.applyTo(theme.textTheme.bodyLarge).copyWith(
+              fontSize: _preferences.fontSize,
+              height: _preferences.lineHeight,
+              letterSpacing: 0.15,
+              color: backgroundPreset.primaryTextColor,
+            );
 
     if (_isBootstrapping) {
       return Scaffold(
@@ -1542,21 +1531,40 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                           _selectedTextByChapter[chapterIndex] = selectedText;
                         }
                       },
-                      contextMenuBuilder:
-                          (
-                            BuildContext context,
-                            SelectableRegionState selectableRegionState,
-                          ) {
-                            final _ChapterSelectionSnapshot? snapshot =
-                                _selectionSnapshotForChapter(chapterIndex);
-                            final bool shouldAutoHighlight =
-                                _pendingSecondaryHighlightChapter ==
-                                    chapterIndex &&
+                      contextMenuBuilder: (
+                        BuildContext context,
+                        SelectableRegionState selectableRegionState,
+                      ) {
+                        final _ChapterSelectionSnapshot? snapshot =
+                            _selectionSnapshotForChapter(chapterIndex);
+                        final bool shouldAutoHighlight =
+                            _pendingSecondaryHighlightChapter == chapterIndex &&
                                 _shouldUseSecondaryClickShortcut(context) &&
                                 snapshot != null;
-                            if (shouldAutoHighlight) {
-                              _pendingSecondaryHighlightChapter = null;
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (shouldAutoHighlight) {
+                          _pendingSecondaryHighlightChapter = null;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            ContextMenuController.removeAny();
+                            selectableRegionState.clearSelection();
+                            unawaited(
+                              _saveSelectionAsAnnotationFromSnapshot(
+                                snapshot,
+                                withNote: false,
+                              ),
+                            );
+                          });
+                          return const SizedBox.shrink();
+                        }
+
+                        final List<ContextMenuButtonItem> buttonItems =
+                            List<ContextMenuButtonItem>.from(
+                          selectableRegionState.contextMenuButtonItems,
+                        );
+                        if (snapshot != null) {
+                          buttonItems.addAll(<ContextMenuButtonItem>[
+                            ContextMenuButtonItem(
+                              label: 'Destacar',
+                              onPressed: () {
                                 ContextMenuController.removeAny();
                                 selectableRegionState.clearSelection();
                                 unawaited(
@@ -1565,50 +1573,29 @@ class _ReaderPageState extends State<ReaderPage> with WidgetsBindingObserver {
                                     withNote: false,
                                   ),
                                 );
-                              });
-                              return const SizedBox.shrink();
-                            }
-
-                            final List<ContextMenuButtonItem> buttonItems =
-                                List<ContextMenuButtonItem>.from(
-                                  selectableRegionState.contextMenuButtonItems,
+                              },
+                            ),
+                            ContextMenuButtonItem(
+                              label: 'Anotar',
+                              onPressed: () {
+                                ContextMenuController.removeAny();
+                                selectableRegionState.clearSelection();
+                                unawaited(
+                                  _saveSelectionAsAnnotationFromSnapshot(
+                                    snapshot,
+                                    withNote: true,
+                                  ),
                                 );
-                            if (snapshot != null) {
-                              buttonItems.addAll(<ContextMenuButtonItem>[
-                                ContextMenuButtonItem(
-                                  label: 'Destacar',
-                                  onPressed: () {
-                                    ContextMenuController.removeAny();
-                                    selectableRegionState.clearSelection();
-                                    unawaited(
-                                      _saveSelectionAsAnnotationFromSnapshot(
-                                        snapshot,
-                                        withNote: false,
-                                      ),
-                                    );
-                                  },
-                                ),
-                                ContextMenuButtonItem(
-                                  label: 'Anotar',
-                                  onPressed: () {
-                                    ContextMenuController.removeAny();
-                                    selectableRegionState.clearSelection();
-                                    unawaited(
-                                      _saveSelectionAsAnnotationFromSnapshot(
-                                        snapshot,
-                                        withNote: true,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ]);
-                            }
+                              },
+                            ),
+                          ]);
+                        }
 
-                            return AdaptiveTextSelectionToolbar.buttonItems(
-                              anchors: selectableRegionState.contextMenuAnchors,
-                              buttonItems: buttonItems,
-                            );
-                          },
+                        return AdaptiveTextSelectionToolbar.buttonItems(
+                          anchors: selectableRegionState.contextMenuAnchors,
+                          buttonItems: buttonItems,
+                        );
+                      },
                       child: SelectionListener(
                         selectionNotifier: _notifierForChapter(chapterIndex),
                         child: Text.rich(
@@ -1837,13 +1824,11 @@ class _ChapterSearchDelegate extends SearchDelegate<Chapter?> {
     final String normalizedQuery = query.trim().toLowerCase();
     final List<Chapter> matches = normalizedQuery.isEmpty
         ? chapters
-        : chapters
-              .where((Chapter chapter) {
-                final String haystack = '${chapter.title} ${chapter.fileName}'
-                    .toLowerCase();
-                return haystack.contains(normalizedQuery);
-              })
-              .toList(growable: false);
+        : chapters.where((Chapter chapter) {
+            final String haystack =
+                '${chapter.title} ${chapter.fileName}'.toLowerCase();
+            return haystack.contains(normalizedQuery);
+          }).toList(growable: false);
 
     if (matches.isEmpty) {
       return const Center(child: Text('Nenhum capitulo encontrado.'));
@@ -1917,42 +1902,41 @@ class _BookContentSearchDelegate extends SearchDelegate<int?> {
   Widget _buildAsyncResults() {
     return FutureBuilder<List<BookSearchMatch>>(
       future: search(query),
-      builder:
-          (
-            BuildContext context,
-            AsyncSnapshot<List<BookSearchMatch>> snapshot,
-          ) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<List<BookSearchMatch>> snapshot,
+      ) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-            final List<BookSearchMatch> matches =
-                snapshot.data ?? const <BookSearchMatch>[];
-            if (matches.isEmpty) {
-              return const Center(child: Text('Nenhum trecho encontrado.'));
-            }
+        final List<BookSearchMatch> matches =
+            snapshot.data ?? const <BookSearchMatch>[];
+        if (matches.isEmpty) {
+          return const Center(child: Text('Nenhum trecho encontrado.'));
+        }
 
-            return ListView.builder(
-              itemCount: matches.length,
-              itemBuilder: (BuildContext context, int index) {
-                final BookSearchMatch match = matches[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    radius: 16,
-                    child: Text('${match.chapterIndex + 1}'),
-                  ),
-                  title: Text(match.chapterTitle),
-                  subtitle: Text(
-                    '${match.matchCount} ocorrencias\n${match.snippet}',
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  isThreeLine: true,
-                  onTap: () => close(context, match.chapterIndex),
-                );
-              },
+        return ListView.builder(
+          itemCount: matches.length,
+          itemBuilder: (BuildContext context, int index) {
+            final BookSearchMatch match = matches[index];
+            return ListTile(
+              leading: CircleAvatar(
+                radius: 16,
+                child: Text('${match.chapterIndex + 1}'),
+              ),
+              title: Text(match.chapterTitle),
+              subtitle: Text(
+                '${match.matchCount} ocorrencias\n${match.snippet}',
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              isThreeLine: true,
+              onTap: () => close(context, match.chapterIndex),
             );
           },
+        );
+      },
     );
   }
 }
@@ -2039,9 +2023,8 @@ class _ReaderSidePanel extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: isCurrent
-                              ? const Text('Capitulo atual')
-                              : null,
+                          subtitle:
+                              isCurrent ? const Text('Capitulo atual') : null,
                           onTap: () => onJumpToChapter(index),
                         );
                       },
@@ -2062,11 +2045,11 @@ class _ReaderSidePanel extends StatelessWidget {
                               final ReaderBookmark bookmark = bookmarks[index];
                               final String detail =
                                   (bookmark.note?.trim().isNotEmpty ?? false)
-                                  ? bookmark.note!.trim()
-                                  : (bookmark.excerpt?.trim().isNotEmpty ??
-                                        false)
-                                  ? bookmark.excerpt!.trim()
-                                  : 'Sem anotacao';
+                                      ? bookmark.note!.trim()
+                                      : (bookmark.excerpt?.trim().isNotEmpty ??
+                                              false)
+                                          ? bookmark.excerpt!.trim()
+                                          : 'Sem anotacao';
                               return ListTile(
                                 leading: Icon(
                                   bookmark.isFavorite

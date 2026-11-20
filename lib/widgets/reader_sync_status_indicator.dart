@@ -17,9 +17,8 @@ class ReaderSyncStatusIndicator extends StatelessWidget {
     return AnimatedBuilder(
       animation: sync,
       builder: (BuildContext context, Widget? child) {
-        final SyncPhase phase = sync.preferences.enabled
-            ? sync.phase
-            : SyncPhase.localOnly;
+        final SyncPhase phase =
+            sync.preferences.enabled ? sync.phase : SyncPhase.localOnly;
         final IconData icon;
         final String message;
         switch (phase) {

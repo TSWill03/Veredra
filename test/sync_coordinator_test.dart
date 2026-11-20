@@ -184,9 +184,8 @@ void main() {
               'bookId': 'book-a',
               'chapterIndex': 1,
               'chapterProgress': 0.25,
-              'savedAt': recent
-                  .subtract(const Duration(hours: 2))
-                  .toIso8601String(),
+              'savedAt':
+                  recent.subtract(const Duration(hours: 2)).toIso8601String(),
             },
           ),
         ],
@@ -217,9 +216,8 @@ void main() {
           'bookId': 'book-a',
           'chapterIndex': 15,
           'chapterProgress': 0.9,
-          'savedAt': recent
-              .subtract(const Duration(minutes: 10))
-              .toIso8601String(),
+          'savedAt':
+              recent.subtract(const Duration(minutes: 10)).toIso8601String(),
         },
         updatedAt: recent.subtract(const Duration(minutes: 5)),
         version: 1,
@@ -265,9 +263,8 @@ void main() {
             data: <String, dynamic>{
               'bookId': 'book-a',
               'chapterIndex': 2,
-              'savedAt': recent
-                  .subtract(const Duration(hours: 1))
-                  .toIso8601String(),
+              'savedAt':
+                  recent.subtract(const Duration(hours: 1)).toIso8601String(),
             },
           ),
         ],
@@ -547,17 +544,17 @@ class FakeRemoteSyncGateway implements RemoteSyncGateway {
     }
     records['${operation.entityType.name}:${operation.entityId}'] =
         RemoteSyncRecord(
-          entityType: operation.entityType,
-          entityId: operation.entityId,
-          payload: Map<String, dynamic>.from(
-            operation.payload['data'] as Map<String, dynamic>,
-          ),
-          updatedAt: operation.updatedAt,
-          version: operation.version,
-          deletedAt: operation.operationType == SyncOperationType.delete
-              ? operation.updatedAt
-              : null,
-        );
+      entityType: operation.entityType,
+      entityId: operation.entityId,
+      payload: Map<String, dynamic>.from(
+        operation.payload['data'] as Map<String, dynamic>,
+      ),
+      updatedAt: operation.updatedAt,
+      version: operation.version,
+      deletedAt: operation.operationType == SyncOperationType.delete
+          ? operation.updatedAt
+          : null,
+    );
   }
 
   @override

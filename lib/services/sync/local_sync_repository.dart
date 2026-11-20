@@ -92,8 +92,8 @@ class LocalSyncRepository implements LocalSyncDataSource {
       );
     }
 
-    final Map<String, dynamic> progressState = await progressService
-        .exportState();
+    final Map<String, dynamic> progressState =
+        await progressService.exportState();
     snapshots.add(
       LocalSyncSnapshot(
         entityType: SyncEntityType.preferences,
@@ -138,8 +138,8 @@ class LocalSyncRepository implements LocalSyncDataSource {
       );
     }
 
-    final Map<String, List<ReaderBookmark>> bookmarks = await bookmarkService
-        .loadAllBookmarks();
+    final Map<String, List<ReaderBookmark>> bookmarks =
+        await bookmarkService.loadAllBookmarks();
     for (final List<ReaderBookmark> records in bookmarks.values) {
       for (final ReaderBookmark record in records) {
         snapshots.add(
@@ -288,9 +288,8 @@ class LocalSyncRepository implements LocalSyncDataSource {
           altTitle: remoteReference.altTitle,
           tags: remoteReference.tags,
         ),
-        chapterCount: local.chapterCount > 0
-            ? local.chapterCount
-            : incoming.chapterCount,
+        chapterCount:
+            local.chapterCount > 0 ? local.chapterCount : incoming.chapterCount,
         isFavorite: incoming.isFavorite,
       );
     }

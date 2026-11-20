@@ -19,8 +19,8 @@ class SyncRetryPolicy {
 
 class SyncQueue {
   SyncQueue({required this.profileId, AppStorage? storage, Uuid? uuid})
-    : _storage = storage ?? createAppStorage(),
-      _uuid = uuid ?? const Uuid();
+      : _storage = storage ?? createAppStorage(),
+        _uuid = uuid ?? const Uuid();
 
   final String profileId;
   final AppStorage _storage;
@@ -90,51 +90,51 @@ class SyncQueue {
     required Map<String, dynamic> payload,
     SyncOperationType operationType = SyncOperationType.upsert,
     DateTime? now,
-  }) => _mutate((List<SyncOperation> operations) {
-    final DateTime timestamp = (now ?? DateTime.now()).toUtc();
-    final int existingIndex = operations.indexWhere(
-      (SyncOperation op) =>
-          op.userId == userId &&
-          op.entityType == entityType &&
-          op.entityId == entityId,
-    );
-    final SyncOperation? previous = existingIndex >= 0
-        ? operations[existingIndex]
-        : null;
-    // Do not bump revisions or reset backoff for unchanged snapshots.
-    if (previous != null &&
-        previous.operationType == operationType &&
-        jsonEncode(previous.payload) == jsonEncode(payload)) {
-      return previous;
-    }
-    final SyncOperation operation = SyncOperation(
-      // Keep the same ID for idempotent remote upserts; the exact version
-      // is checked before acknowledging a concurrent replacement.
-      id: previous?.id ?? _uuid.v4(),
-      userId: userId,
-      deviceId: deviceId,
-      entityType: entityType,
-      entityId: entityId,
-      operationType: operationType,
-      payload: Map<String, dynamic>.from(payload),
-      createdAt: previous?.createdAt ?? timestamp,
-      updatedAt: timestamp,
-      version: (previous?.version ?? 0) + 1,
-    );
-    if (existingIndex >= 0) {
-      operations[existingIndex] = operation;
-    } else {
-      operations.add(operation);
-    }
-    return operation;
-  });
+  }) =>
+      _mutate((List<SyncOperation> operations) {
+        final DateTime timestamp = (now ?? DateTime.now()).toUtc();
+        final int existingIndex = operations.indexWhere(
+          (SyncOperation op) =>
+              op.userId == userId &&
+              op.entityType == entityType &&
+              op.entityId == entityId,
+        );
+        final SyncOperation? previous =
+            existingIndex >= 0 ? operations[existingIndex] : null;
+        // Do not bump revisions or reset backoff for unchanged snapshots.
+        if (previous != null &&
+            previous.operationType == operationType &&
+            jsonEncode(previous.payload) == jsonEncode(payload)) {
+          return previous;
+        }
+        final SyncOperation operation = SyncOperation(
+          // Keep the same ID for idempotent remote upserts; the exact version
+          // is checked before acknowledging a concurrent replacement.
+          id: previous?.id ?? _uuid.v4(),
+          userId: userId,
+          deviceId: deviceId,
+          entityType: entityType,
+          entityId: entityId,
+          operationType: operationType,
+          payload: Map<String, dynamic>.from(payload),
+          createdAt: previous?.createdAt ?? timestamp,
+          updatedAt: timestamp,
+          version: (previous?.version ?? 0) + 1,
+        );
+        if (existingIndex >= 0) {
+          operations[existingIndex] = operation;
+        } else {
+          operations.add(operation);
+        }
+        return operation;
+      });
 
   Future<List<SyncOperation>> due({DateTime? now}) => _exclusive(() async {
-    final DateTime timestamp = (now ?? DateTime.now()).toUtc();
-    return (await _readUnsafe())
-        .where((SyncOperation operation) => operation.isDue(timestamp))
-        .toList(growable: false);
-  });
+        final DateTime timestamp = (now ?? DateTime.now()).toUtc();
+        return (await _readUnsafe())
+            .where((SyncOperation operation) => operation.isDue(timestamp))
+            .toList(growable: false);
+      });
 
   /// An ACK for revision A must never discard revision B, even when the
   /// remote upsert reused the operation UUID while A was in flight.
@@ -151,21 +151,22 @@ class SyncQueue {
     String operationId, {
     int? expectedVersion,
     DateTime? now,
-  }) => _mutate((List<SyncOperation> operations) {
-    final int index = operations.indexWhere(
-      (SyncOperation op) =>
-          op.id == operationId &&
-          (expectedVersion == null || op.version == expectedVersion),
-    );
-    if (index < 0) return;
-    final int nextAttempt = operations[index].attemptCount + 1;
-    operations[index] = operations[index].copyWith(
-      attemptCount: nextAttempt,
-      nextAttemptAt: (now ?? DateTime.now()).toUtc().add(
-        SyncRetryPolicy.delayForAttempt(nextAttempt - 1),
-      ),
-    );
-  });
+  }) =>
+      _mutate((List<SyncOperation> operations) {
+        final int index = operations.indexWhere(
+          (SyncOperation op) =>
+              op.id == operationId &&
+              (expectedVersion == null || op.version == expectedVersion),
+        );
+        if (index < 0) return;
+        final int nextAttempt = operations[index].attemptCount + 1;
+        operations[index] = operations[index].copyWith(
+          attemptCount: nextAttempt,
+          nextAttemptAt: (now ?? DateTime.now()).toUtc().add(
+                SyncRetryPolicy.delayForAttempt(nextAttempt - 1),
+              ),
+        );
+      });
 
   /// Only discard progress operations proven older than the server value.
   /// Re-read and compare under the lock: a newer local scroll can have been
@@ -175,26 +176,26 @@ class SyncQueue {
     required SyncEntityType entityType,
     required String entityId,
     DateTime? maxProgressSavedAt,
-  }) => _mutate((List<SyncOperation> operations) {
-    operations.removeWhere((SyncOperation op) {
-      if (op.userId != userId ||
-          op.entityType != entityType ||
-          op.entityId != entityId) {
-        return false;
-      }
-      if (entityType != SyncEntityType.progress) return true;
-      if (maxProgressSavedAt == null) return false;
-      final dynamic raw = op.payload['data'];
-      final Map<String, dynamic> data = raw is Map<String, dynamic>
-          ? raw
-          : <String, dynamic>{};
-      final DateTime? localTime = DateTime.tryParse(
-        data['savedAt'] as String? ?? '',
-      );
-      return localTime == null ||
-          !localTime.toUtc().isAfter(maxProgressSavedAt.toUtc());
-    });
-  });
+  }) =>
+      _mutate((List<SyncOperation> operations) {
+        operations.removeWhere((SyncOperation op) {
+          if (op.userId != userId ||
+              op.entityType != entityType ||
+              op.entityId != entityId) {
+            return false;
+          }
+          if (entityType != SyncEntityType.progress) return true;
+          if (maxProgressSavedAt == null) return false;
+          final dynamic raw = op.payload['data'];
+          final Map<String, dynamic> data =
+              raw is Map<String, dynamic> ? raw : <String, dynamic>{};
+          final DateTime? localTime = DateTime.tryParse(
+            data['savedAt'] as String? ?? '',
+          );
+          return localTime == null ||
+              !localTime.toUtc().isAfter(maxProgressSavedAt.toUtc());
+        });
+      });
 
   Future<void> clearForUser(String userId) =>
       _mutate((List<SyncOperation> operations) {

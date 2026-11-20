@@ -28,8 +28,8 @@ class SyncCoordinator extends ChangeNotifier {
     this.bookFileSyncService,
     AppStorage? storage,
     DiagnosticsService? diagnostics,
-  }) : _storage = storage ?? createAppStorage(),
-       _diagnostics = diagnostics ?? DiagnosticsService();
+  })  : _storage = storage ?? createAppStorage(),
+        _diagnostics = diagnostics ?? DiagnosticsService();
 
   final String profileId;
   final String? Function() currentUserId;
@@ -142,8 +142,8 @@ class SyncCoordinator extends ChangeNotifier {
       final List<RemoteSyncRecord> records = bookId == null
           ? await remoteGateway!.pullProgress(userId: userId)
           : await remoteGateway!
-                .pullProgressForBook(userId: userId, bookId: bookId)
-                .timeout(const Duration(seconds: 3));
+              .pullProgressForBook(userId: userId, bookId: bookId)
+              .timeout(const Duration(seconds: 3));
       _ensureCurrentUser(userId);
       await localRepository.applyRemoteRecords(records);
     } catch (error, stackTrace) {
@@ -177,8 +177,8 @@ class SyncCoordinator extends ChangeNotifier {
     );
     phase = preferences.enabled
         ? pendingCount > 0
-              ? SyncPhase.pending
-              : SyncPhase.synchronized
+            ? SyncPhase.pending
+            : SyncPhase.synchronized
         : SyncPhase.localOnly;
     _networkSubscription = networkMonitor.changes.listen((bool online) {
       if (!online) {
@@ -286,8 +286,8 @@ class SyncCoordinator extends ChangeNotifier {
     errorMessage = null;
     notifyListeners();
     try {
-      final LocalSyncSnapshot? snapshot = await localRepository
-          .loadProgressSnapshot(bookId);
+      final LocalSyncSnapshot? snapshot =
+          await localRepository.loadProgressSnapshot(bookId);
       final String deviceId = await deviceIdentityService.loadOrCreateId();
 
       // Persist the outbox before attempting any network operation. The
@@ -492,20 +492,20 @@ class SyncCoordinator extends ChangeNotifier {
       );
       activeStep = 'Comparando posicoes de leitura';
       notifyListeners();
-      final List<RemoteSyncRecord> remoteProgresses = await remoteGateway!
-          .pullProgress(userId: userId);
+      final List<RemoteSyncRecord> remoteProgresses =
+          await remoteGateway!.pullProgress(userId: userId);
       _ensureCurrentUser(userId);
       final Map<String, RemoteSyncRecord> remoteByBook =
           <String, RemoteSyncRecord>{
-            for (final RemoteSyncRecord record in remoteProgresses)
-              record.entityId: record,
-          };
+        for (final RemoteSyncRecord record in remoteProgresses)
+          record.entityId: record,
+      };
       final Map<String, LocalSyncSnapshot> localByBook =
           <String, LocalSyncSnapshot>{
-            for (final LocalSyncSnapshot snapshot in snapshots)
-              if (snapshot.entityType == SyncEntityType.progress)
-                snapshot.entityId: snapshot,
-          };
+        for (final LocalSyncSnapshot snapshot in snapshots)
+          if (snapshot.entityType == SyncEntityType.progress)
+            snapshot.entityId: snapshot,
+      };
 
       // Remote checkpoints are applied first, only if newer. An earlier
       // chapter saved later is a valid "resume here" position.
@@ -551,10 +551,10 @@ class SyncCoordinator extends ChangeNotifier {
         }
         final Map<String, dynamic> data =
             operation.payload['data'] is Map<String, dynamic>
-            ? Map<String, dynamic>.from(
-                operation.payload['data'] as Map<String, dynamic>,
-              )
-            : <String, dynamic>{};
+                ? Map<String, dynamic>.from(
+                    operation.payload['data'] as Map<String, dynamic>,
+                  )
+                : <String, dynamic>{};
         final DateTime? queuedTime = SyncConflictResolver.progressSavedAt(data);
         final DateTime? serverTime = SyncConflictResolver.progressSavedAt(
           remote.payload,
@@ -646,8 +646,8 @@ class SyncCoordinator extends ChangeNotifier {
         await localRepository.applyRemoteRecords(records);
         // The upload can race with another device. A final pull reconciles
         // the result of the server-side newer-only progress upsert.
-        final List<RemoteSyncRecord> latestProgress = await remoteGateway!
-            .pullProgress(userId: userId);
+        final List<RemoteSyncRecord> latestProgress =
+            await remoteGateway!.pullProgress(userId: userId);
         _ensureCurrentUser(userId);
         await localRepository.applyRemoteRecords(latestProgress);
         lastSyncAt = DateTime.now().toUtc();
@@ -655,17 +655,17 @@ class SyncCoordinator extends ChangeNotifier {
         if (preferences.syncBookFiles && bookFileSyncService != null) {
           activeStep = 'Sincronizando livros';
           notifyListeners();
-          final BookFileSyncReport report = await bookFileSyncService!
-              .synchronize(
-                userId: userId,
-                deviceId: deviceId,
-                onProgress: (String stage, int done, int total) {
-                  activeStep = stage;
-                  processedBooks = done;
-                  totalBooks = total;
-                  notifyListeners();
-                },
-              );
+          final BookFileSyncReport report =
+              await bookFileSyncService!.synchronize(
+            userId: userId,
+            deviceId: deviceId,
+            onProgress: (String stage, int done, int total) {
+              activeStep = stage;
+              processedBooks = done;
+              totalBooks = total;
+              notifyListeners();
+            },
+          );
           uploadedBooks = report.uploaded;
           downloadedBooks = report.downloaded;
           if (report.hasErrors) {

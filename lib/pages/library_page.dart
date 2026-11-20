@@ -332,7 +332,8 @@ class _LibraryPageState extends State<LibraryPage> {
             onContinuousProgressSaved: () => widget.syncCoordinator
                 ?.notifyLocalProgressSaved(book.id, continuous: true),
             onFlushProgress: () =>
-                widget.syncCoordinator?.flushReadingProgress(book.id),
+                widget.syncCoordinator?.flushReadingProgress(book.id) ??
+                Future<void>.value(),
           )
         : PdfReaderPage(
             book: book,
@@ -342,7 +343,8 @@ class _LibraryPageState extends State<LibraryPage> {
             onProgressSaved: () =>
                 widget.syncCoordinator?.notifyLocalProgressSaved(book.id),
             onFlushProgress: () =>
-                widget.syncCoordinator?.flushReadingProgress(book.id),
+                widget.syncCoordinator?.flushReadingProgress(book.id) ??
+                Future<void>.value(),
           );
 
     await Navigator.of(context).push(
@@ -419,8 +421,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _changeCover(LibraryEntry entry) async {
     await _runBusyTask(() async {
-      final String? coverPath = await widget.bookService
-          .pickAndStoreCustomCover(bookId: entry.id);
+      final String? coverPath =
+          await widget.bookService.pickAndStoreCustomCover(bookId: entry.id);
       if (coverPath == null) {
         return;
       }
@@ -499,12 +501,12 @@ class _LibraryPageState extends State<LibraryPage> {
 
     final ValueNotifier<TranslationProgress> progressNotifier =
         ValueNotifier<TranslationProgress>(
-          const TranslationProgress(
-            stage: 'Preparando traducao',
-            completedChapters: 0,
-            totalChapters: 1,
-          ),
-        );
+      const TranslationProgress(
+        stage: 'Preparando traducao',
+        completedChapters: 0,
+        totalChapters: 1,
+      ),
+    );
 
     showDialog<void>(
       context: context,
@@ -514,11 +516,11 @@ class _LibraryPageState extends State<LibraryPage> {
           valueListenable: progressNotifier,
           builder:
               (BuildContext context, TranslationProgress value, Widget? child) {
-                return TranslationProgressDialog(
-                  bookTitle: entry.title,
-                  progress: value,
-                );
-              },
+            return TranslationProgressDialog(
+              bookTitle: entry.title,
+              progress: value,
+            );
+          },
         );
       },
     );
@@ -591,8 +593,8 @@ class _LibraryPageState extends State<LibraryPage> {
       context: context,
       showDragHandle: true,
       builder: (BuildContext context) {
-        final List<ImportOption> options = widget.bookService
-            .getImportOptions();
+        final List<ImportOption> options =
+            widget.bookService.getImportOptions();
         return SafeArea(
           child: ListView(
             shrinkWrap: true,
@@ -620,34 +622,34 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _openQuickAction(_LibraryQuickAction action) async {
     switch (action) {
       case _LibraryQuickAction.globalSearch:
-        final BookOpenRequest? searchRequest = await Navigator.of(context)
-            .push<BookOpenRequest>(
-              MaterialPageRoute<BookOpenRequest>(
-                builder: (BuildContext context) {
-                  return GlobalSearchPage(
-                    entries: _entries,
-                    librarySearchService: widget.librarySearchService,
-                  );
-                },
-              ),
-            );
+        final BookOpenRequest? searchRequest =
+            await Navigator.of(context).push<BookOpenRequest>(
+          MaterialPageRoute<BookOpenRequest>(
+            builder: (BuildContext context) {
+              return GlobalSearchPage(
+                entries: _entries,
+                librarySearchService: widget.librarySearchService,
+              );
+            },
+          ),
+        );
         if (searchRequest != null) {
           await _openBookRequest(searchRequest);
         }
         break;
       case _LibraryQuickAction.notes:
-        final BookOpenRequest? notesRequest = await Navigator.of(context)
-            .push<BookOpenRequest>(
-              MaterialPageRoute<BookOpenRequest>(
-                builder: (BuildContext context) {
-                  return NotesOverviewPage(
-                    entries: _entries,
-                    bookmarkService: widget.bookmarkService,
-                    annotationService: widget.annotationService,
-                  );
-                },
-              ),
-            );
+        final BookOpenRequest? notesRequest =
+            await Navigator.of(context).push<BookOpenRequest>(
+          MaterialPageRoute<BookOpenRequest>(
+            builder: (BuildContext context) {
+              return NotesOverviewPage(
+                entries: _entries,
+                bookmarkService: widget.bookmarkService,
+                annotationService: widget.annotationService,
+              );
+            },
+          ),
+        );
         if (notesRequest != null) {
           await _openBookRequest(notesRequest);
         }
@@ -676,8 +678,8 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _showProfileSheet() async {
-    final List<AppProfile> profiles = await widget.profileService
-        .loadProfiles();
+    final List<AppProfile> profiles =
+        await widget.profileService.loadProfiles();
     if (!mounted) {
       return;
     }
@@ -862,8 +864,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
     await _runBusyTask(() async {
       await widget.profileService.deleteProfile(widget.currentProfile.id);
-      final AppProfile nextProfile = await widget.profileService
-          .loadCurrentProfile();
+      final AppProfile nextProfile =
+          await widget.profileService.loadCurrentProfile();
       await widget.onProfileChanged(nextProfile);
       await _refreshLibrary();
       await _refreshLastBookAvailability();
@@ -883,8 +885,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _importBackup() async {
     await _runBusyTask(() async {
-      final AppProfile? importedProfile = await widget.backupService
-          .importProfileBackup();
+      final AppProfile? importedProfile =
+          await widget.backupService.importProfileBackup();
       if (importedProfile == null) {
         return;
       }
@@ -1323,26 +1325,22 @@ class _LibraryPageState extends State<LibraryPage> {
           LogicalKeyboardKey.keyN,
           control: true,
           shift: true,
-        ): () =>
-            _handleQuickActionShortcut(_LibraryQuickAction.notes),
+        ): () => _handleQuickActionShortcut(_LibraryQuickAction.notes),
         const SingleActivator(
           LogicalKeyboardKey.keyN,
           meta: true,
           shift: true,
-        ): () =>
-            _handleQuickActionShortcut(_LibraryQuickAction.notes),
+        ): () => _handleQuickActionShortcut(_LibraryQuickAction.notes),
         const SingleActivator(
           LogicalKeyboardKey.keyS,
           control: true,
           shift: true,
-        ): () =>
-            _handleQuickActionShortcut(_LibraryQuickAction.stats),
+        ): () => _handleQuickActionShortcut(_LibraryQuickAction.stats),
         const SingleActivator(
           LogicalKeyboardKey.keyS,
           meta: true,
           shift: true,
-        ): () =>
-            _handleQuickActionShortcut(_LibraryQuickAction.stats),
+        ): () => _handleQuickActionShortcut(_LibraryQuickAction.stats),
       },
       child: Focus(
         autofocus: true,
@@ -1519,8 +1517,8 @@ class _LibraryPageState extends State<LibraryPage> {
                 onPressed: _isBusy
                     ? null
                     : () => unawaited(
-                        _openQuickAction(_LibraryQuickAction.globalSearch),
-                      ),
+                          _openQuickAction(_LibraryQuickAction.globalSearch),
+                        ),
                 icon: const Icon(Icons.travel_explore_rounded),
                 label: const Text('Busca global'),
               ),
@@ -1619,8 +1617,8 @@ class _LibraryBookCard extends StatelessWidget {
     final String secondaryMeta = missingContent
         ? '${entry.chapterCount} capitulos registrados (nao baixados)'
         : entry.chapterCount > 0
-        ? '${entry.reference.format.label} - ${entry.chapterCount} capitulos'
-        : entry.reference.format.label;
+            ? '${entry.reference.format.label} - ${entry.chapterCount} capitulos'
+            : entry.reference.format.label;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1728,7 +1726,7 @@ class _LibraryBookCard extends StatelessWidget {
                 Text(
                   missingContent
                       ? 'Somente metadados sincronizados. Importe o '
-                            'arquivo para ler neste aparelho.'
+                          'arquivo para ler neste aparelho.'
                       : entry.reference.subtitle,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
