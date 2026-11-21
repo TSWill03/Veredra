@@ -6,17 +6,21 @@ class AppConfig {
   // newly published version.json for its own currently running version.
   static const String clientVersion = String.fromEnvironment(
     'VEREDRA_CLIENT_VERSION',
-    defaultValue: '0.1.4+5',
+    defaultValue: '0.1.4+6',
   );
 
-  static const String supabaseUrl =
-      String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: '',
+  );
   static const String supabasePublishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
     defaultValue: '',
   );
-  static const String legacySupabaseAnonKey =
-      String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+  static const String legacySupabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: '',
+  );
   static const String webAuthRedirectUrl = String.fromEnvironment(
     'AUTH_REDIRECT_URL',
     defaultValue: 'https://wicolly.com.br/veredra/',
@@ -40,7 +44,8 @@ class AppConfig {
 
   static bool get isSupabaseConfigured {
     final Uri? uri = Uri.tryParse(supabaseUrl);
-    final bool allowedScheme = uri?.scheme == 'https' ||
+    final bool allowedScheme =
+        uri?.scheme == 'https' ||
         (uri?.scheme == 'http' &&
             (uri?.host == 'localhost' || uri?.host == '127.0.0.1'));
     return allowedScheme &&
