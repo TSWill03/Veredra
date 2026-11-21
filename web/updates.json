@@ -1,6 +1,6 @@
 {
   "schema": 1,
   "version": "0.1.4",
-  "buildNumber": 5,
-  "notes": "Central de atualizacoes com aviso azul na biblioteca e historico de novidades. No Windows, as versoes oficiais podem ser baixadas automaticamente do GitHub Releases, verificadas por SHA-256 e instaladas sem repetir o assistente de instalacao. Web/PWA atualiza somente quando voce confirmar. Seus livros continuam locais e nenhuma atualizacao interrompe a leitura."
+  "buildNumber": 6,
+  "notes": "Central de atualizacoes com indicador azul no Veredra e instalador Windows com atualizacao automatizada por consentimento. Corrigida a verificacao de URLs de releases do GitHub que codificam o sinal + como %2B, garantindo o download seguro. Preservados livros, progresso e dados locais."
 }

@@ -26,8 +26,8 @@ O usuário escolhe **Atualizar e recarregar**. O Flutter sinaliza ao host Web `v
 # Após aprovar e integrar o PR com versão alinhada e CI verde:
 git checkout main
 git pull --ff-only
-git tag v0.1.4+5
-git push origin v0.1.4+5
+git tag v0.1.4+6
+git push origin v0.1.4+6
 
 # Conferir GH Actions: Windows installer and GitHub Release
 # Conferir release + digest; abrir app Windows instalado e validar upgrade com próxima versão.
