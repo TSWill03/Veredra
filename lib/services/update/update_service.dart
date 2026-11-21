@@ -136,8 +136,11 @@ class UpdateService {
         _ownsClient = client == null,
         target = target ?? currentUpdateTarget,
         currentVersion = currentVersion ?? AppConfig.clientVersion,
-        _siteUri =
-            siteUri ?? Uri.https('wicolly.com.br', '/veredra/updates.json'),
+        _siteUri = siteUri ??
+            ((target ?? currentUpdateTarget) == UpdateTarget.web &&
+                    (Uri.base.scheme == 'https' || Uri.base.scheme == 'http')
+                ? Uri.base.resolve('/veredra/updates.json')
+                : Uri.https('wicolly.com.br', '/veredra/updates.json')),
         _githubUri = githubUri ??
             Uri.https(
                 'api.github.com', '/repos/TSWill03/Veredra/releases/latest');
