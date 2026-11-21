@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/reader_background_preset.dart';
 import '../models/reader_font_preset.dart';
+import '../models/reader_premium_theme.dart';
 import '../models/reader_preferences.dart';
 import '../models/reader_text_align_preset.dart';
 
@@ -40,6 +41,26 @@ class _ReaderSettingsState extends State<ReaderSettings> {
       _preferences = next;
     });
     widget.onPreferencesChanged(next);
+  }
+
+  void _showPremiumThemesInfo() {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Temas exclusivos em breve'),
+        content: const Text(
+          'Estamos preparando novas paletas e personalizacao avancada. '
+          'Os cinco fundos atuais continuam gratuitos. '
+          'Nenhuma compra pode ser feita nesta versao.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendi'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -124,6 +145,52 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                     ),
                 ],
               ),
+              const SizedBox(height: 20),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Temas exclusivos',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                  ),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text('Em breve', style: theme.textTheme.labelSmall),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Previa de novas paletas. Nenhuma compra disponivel ainda.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final double tileWidth = constraints.maxWidth >= 340
+                      ? (constraints.maxWidth - 10) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: <Widget>[
+                      for (final ReaderPremiumTheme preview
+                          in ReaderPremiumTheme.previews)
+                        SizedBox(
+                          width: tileWidth,
+                          child: _PremiumThemeCard(
+                            preview: preview,
+                            onPressed: _showPremiumThemesInfo,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
               const SizedBox(height: 18),
               _SectionLabel(
                 icon: Icons.format_line_spacing_rounded,
@@ -152,7 +219,8 @@ class _ReaderSettingsState extends State<ReaderSettings> {
                 divisions: 27,
                 onChanged: (double value) {
                   _updatePreferences(
-                      _preferences.copyWith(contentWidth: value));
+                    _preferences.copyWith(contentWidth: value),
+                  );
                 },
               ),
               const SizedBox(height: 8),
@@ -243,12 +311,85 @@ class _ReaderSettingsState extends State<ReaderSettings> {
   }
 }
 
+class _PremiumThemeCard extends StatelessWidget {
+  const _PremiumThemeCard({required this.preview, required this.onPressed});
+
+  final ReaderPremiumTheme preview;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                height: 58,
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: preview.backgroundColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: preview.surfaceColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Aa',
+                        style: TextStyle(
+                          color: preview.textColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.lock_outline_rounded,
+                      color: preview.textColor,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                preview.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge,
+              ),
+              Text(
+                preview.description,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
-    required this.icon,
-    required this.title,
-    this.trailing,
-  });
+  const _SectionLabel({required this.icon, required this.title, this.trailing});
 
   final IconData icon;
   final String title;
@@ -262,17 +403,9 @@ class _SectionLabel extends StatelessWidget {
       children: <Widget>[
         Icon(icon),
         const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            title,
-            style: theme.textTheme.bodyLarge,
-          ),
-        ),
+        Expanded(child: Text(title, style: theme.textTheme.bodyLarge)),
         if (trailing != null)
-          Text(
-            trailing!,
-            style: theme.textTheme.labelLarge,
-          ),
+          Text(trailing!, style: theme.textTheme.labelLarge),
       ],
     );
   }
