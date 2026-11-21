@@ -67,9 +67,8 @@ Future<void> installWindowsRelease(
         }
         final http.Request request = http.Request('GET', next)
           ..followRedirects = false;
-        response = await client
-            .send(request)
-            .timeout(const Duration(seconds: 30));
+        response =
+            await client.send(request).timeout(const Duration(seconds: 30));
         if (response.statusCode >= 300 && response.statusCode < 400) {
           final String? location = response.headers['location'];
           if (location == null) {
@@ -116,12 +115,15 @@ Future<void> installWindowsRelease(
   // The user explicitly confirmed the update from the library. Inno Setup
   // is per-user and restarts the app after replacing program files; it never
   // touches Application Support / profile data.
-  await Process.start(installer.path, <String>[
-    '/VERYSILENT',
-    '/SUPPRESSMSGBOXES',
-    '/NORESTART',
-    '/CLOSEAPPLICATIONS',
-    '/RESTARTAPPLICATIONS',
-  ], mode: ProcessStartMode.detached);
+  await Process.start(
+      installer.path,
+      <String>[
+        '/VERYSILENT',
+        '/SUPPRESSMSGBOXES',
+        '/NORESTART',
+        '/CLOSEAPPLICATIONS',
+        '/RESTARTAPPLICATIONS',
+      ],
+      mode: ProcessStartMode.detached);
   exit(0);
 }

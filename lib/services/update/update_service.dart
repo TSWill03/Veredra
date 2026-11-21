@@ -94,9 +94,9 @@ class AppRelease {
 
   factory AppRelease.fromGitHub(Map<String, dynamic> json) {
     final String version = (json['tag_name'] ?? '').toString().replaceFirst(
-      RegExp(r'^v'),
-      '',
-    );
+          RegExp(r'^v'),
+          '',
+        );
     if (!ReleaseVersion.isValid(version) ||
         json['draft'] == true ||
         json['prerelease'] == true) {
@@ -105,9 +105,8 @@ class AppRelease {
     Uri? installer;
     String? sha;
     int? size;
-    final List<dynamic> assets = json['assets'] is List
-        ? json['assets'] as List<dynamic>
-        : [];
+    final List<dynamic> assets =
+        json['assets'] is List ? json['assets'] as List<dynamic> : [];
     final String name = 'Veredra-Setup-v$version.exe';
     for (final dynamic asset in assets) {
       if (asset is! Map || asset['name'] != name) continue;
@@ -147,17 +146,16 @@ class UpdateService {
     String? currentVersion,
     Uri? siteUri,
     Uri? githubUri,
-  }) : _client = client ?? http.Client(),
-       _ownsClient = client == null,
-       target = target ?? currentUpdateTarget,
-       currentVersion = currentVersion ?? AppConfig.clientVersion,
-       _siteUri = siteUri ?? getWebManifestUri(),
-       _githubUri =
-           githubUri ??
-           Uri.https(
-             'api.github.com',
-             '/repos/TSWill03/Veredra/releases/latest',
-           );
+  })  : _client = client ?? http.Client(),
+        _ownsClient = client == null,
+        target = target ?? currentUpdateTarget,
+        currentVersion = currentVersion ?? AppConfig.clientVersion,
+        _siteUri = siteUri ?? getWebManifestUri(),
+        _githubUri = githubUri ??
+            Uri.https(
+              'api.github.com',
+              '/repos/TSWill03/Veredra/releases/latest',
+            );
   final http.Client _client;
   final bool _ownsClient;
   final UpdateTarget target;
@@ -176,12 +174,10 @@ class UpdateService {
         '_check': DateTime.now().millisecondsSinceEpoch.toString(),
       },
     );
-    final http.Response response = await _client
-        .get(
-          uncached,
-          headers: {'Accept': 'application/json', 'Cache-Control': 'no-cache'},
-        )
-        .timeout(const Duration(seconds: 8));
+    final http.Response response = await _client.get(
+      uncached,
+      headers: {'Accept': 'application/json', 'Cache-Control': 'no-cache'},
+    ).timeout(const Duration(seconds: 8));
     if (response.statusCode != 200 || response.bodyBytes.length > 131072) {
       throw StateError(
         'Update check unavailable (HTTP ${response.statusCode}).',

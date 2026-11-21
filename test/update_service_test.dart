@@ -7,14 +7,14 @@ import 'package:http/testing.dart';
 import 'package:txt_webnovel_reader/services/update/update_service.dart';
 
 http.Response webResponse(String version, int build) => http.Response(
-  jsonEncode(<String, dynamic>{
-    'schema': 1,
-    'version': version,
-    'buildNumber': build,
-    'notes': 'Alteracoes desta versao.',
-  }),
-  200,
-);
+      jsonEncode(<String, dynamic>{
+        'schema': 1,
+        'version': version,
+        'buildNumber': build,
+        'notes': 'Alteracoes desta versao.',
+      }),
+      200,
+    );
 
 void main() {
   test(
@@ -65,9 +65,9 @@ void main() {
     client.close();
   });
 
-  test('GitHub release is trusted only with matching asset and digest', () async {
-    const String hash =
-        'aabbccddeeff00112233445566778899'
+  test('GitHub release is trusted only with matching asset and digest',
+      () async {
+    const String hash = 'aabbccddeeff00112233445566778899'
         'aabbccddeeff00112233445566778899';
     final MockClient client = MockClient((request) async {
       expect(request.url.host, 'api.github.com');
