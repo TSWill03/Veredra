@@ -209,6 +209,11 @@ def save_resized(source: Image.Image, target_path: Path, size: int) -> None:
 
 
 def write_ios_icons(source: Image.Image) -> None:
+    # iOS recorta o contorno do icone; seus PNGs devem ser opacos.
+    # Manter a arte aprovada, preenchendo apenas os cantos transparentes.
+    opaque = Image.new("RGBA", source.size, (5, 16, 23, 255))
+    opaque.alpha_composite(source.convert("RGBA"))
+    source = opaque.convert("RGB")
     ios_dir = ROOT / "ios" / "Runner" / "Assets.xcassets" / "AppIcon.appiconset"
     ios_sizes = {
         "Icon-App-20x20@1x.png": 20,
