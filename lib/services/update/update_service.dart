@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../config/app_config.dart';
+import 'manifest_origin_stub.dart'
+    if (dart.library.js_interop) 'manifest_origin_web.dart';
 
 enum UpdateTarget { web, windows, android, ios, other }
 
@@ -136,11 +138,7 @@ class UpdateService {
         _ownsClient = client == null,
         target = target ?? currentUpdateTarget,
         currentVersion = currentVersion ?? AppConfig.clientVersion,
-        _siteUri = siteUri ??
-            ((target ?? currentUpdateTarget) == UpdateTarget.web &&
-                    (Uri.base.scheme == 'https' || Uri.base.scheme == 'http')
-                ? Uri.base.resolve('/veredra/updates.json')
-                : Uri.https('wicolly.com.br', '/veredra/updates.json')),
+        _siteUri = siteUri ?? getWebManifestUri(),
         _githubUri = githubUri ??
             Uri.https(
                 'api.github.com', '/repos/TSWill03/Veredra/releases/latest');
