@@ -5,6 +5,11 @@ on:
     tags:
       - "v[0-9]*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing stable version tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,25 +21,31 @@ concurrency:
 jobs:
   windows-release:
     name: Test, package and publish Windows installer
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - name: Checkout the tagged commit
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
       - name: Verify version and ancestry
         shell: pwsh
         run: |
           $match = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\s*$'
           if (-not $match) { throw 'Missing semver+build in pubspec.yaml' }
           $version = $match.Matches.Groups[1].Value
-          if ("${{ github.ref_name }}" -ne "v$version") { throw 'Tag must equal pubspec version' }
+          $tag = "${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+\+\d+$') { throw 'Invalid release tag format' }
+          if ($tag -ne "v$version") { throw 'Tag must equal pubspec version' }
           git fetch origin main
           git merge-base --is-ancestor HEAD origin/main
           if ($LASTEXITCODE -ne 0) { throw 'Release tag must point to a commit on main' }
-          $configured = Select-String -Path lib/config/app_config.dart -Pattern "defaultValue: '$version'"
-          if (-not $configured) { throw 'Embedded client version differs from pubspec' }
+          $appConfig = Get-Content lib/config/app_config.dart -Raw
+          $versionPattern = "defaultValue:\s*'" + [regex]::Escape($version) + "'"
+          if ($appConfig -notmatch $versionPattern) {
+            throw 'Embedded client version differs from pubspec'
+          }
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.38.9'
@@ -79,7 +90,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}"
           $v = $tag.Substring(1)
           $setup = "build/installer/Veredra-Setup-$tag.exe"
           if (-not (Test-Path $setup)) { throw 'Cannot publish absent installer' }
