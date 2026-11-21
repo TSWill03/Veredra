@@ -26,10 +26,12 @@ import '../services/site_return_bridge.dart';
 import '../services/translation_service.dart';
 import '../services/auth/account_controller.dart';
 import '../services/sync/sync_coordinator.dart';
+import '../services/update/update_controller.dart';
 import '../widgets/app_watermark_overlay.dart';
 import '../widgets/book_translation_dialog.dart';
 import '../widgets/platform_cover_image.dart';
 import '../widgets/translation_progress_dialog.dart';
+import '../widgets/update_badge_button.dart';
 import 'about_page.dart';
 import 'account_page.dart';
 import 'global_search_page.dart';
@@ -58,6 +60,7 @@ class LibraryPage extends StatefulWidget {
     required this.translationService,
     required this.accountController,
     required this.syncCoordinator,
+    this.updateController,
     required this.lastBookReference,
     required this.fontSize,
     required this.readerFontPreset,
@@ -81,6 +84,7 @@ class LibraryPage extends StatefulWidget {
   final TranslationService translationService;
   final AccountController accountController;
   final SyncCoordinator? syncCoordinator;
+  final UpdateController? updateController;
   final BookReference? lastBookReference;
   final double fontSize;
   final ReaderFontPreset readerFontPreset;
@@ -1362,6 +1366,8 @@ class _LibraryPageState extends State<LibraryPage> {
                 title: const Text('Biblioteca'),
                 centerTitle: false,
                 actions: <Widget>[
+                  if (widget.updateController != null)
+                    UpdateBadgeButton(controller: widget.updateController!),
                   IconButton(
                     key: const Key('account-sync-button'),
                     tooltip: 'Conta e sincronizacao',

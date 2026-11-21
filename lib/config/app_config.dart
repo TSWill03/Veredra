@@ -2,6 +2,13 @@
 class AppConfig {
   const AppConfig._();
 
+  // Build identity is compiled in so a stale PWA does not mistake the
+  // newly published version.json for its own currently running version.
+  static const String clientVersion = String.fromEnvironment(
+    'VEREDRA_CLIENT_VERSION',
+    defaultValue: '0.1.4+5',
+  );
+
   static const String supabaseUrl =
       String.fromEnvironment('SUPABASE_URL', defaultValue: '');
   static const String supabasePublishableKey = String.fromEnvironment(

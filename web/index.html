@@ -112,6 +112,29 @@
     window.veredraSetReadingMode = function (isReading) {
       document.documentElement.classList.toggle('veredra-reading', Boolean(isReading));
     };
+    window.veredraReloadForUpdate = async function () {
+      // Never clear IndexedDB/CacheStorage: those hold offline books.
+      try {
+        if ('serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration('/veredra/');
+          if (registration) {
+            const oldController = navigator.serviceWorker.controller;
+            await registration.update();
+            if (registration.waiting) {
+              registration.waiting.postMessage('skipWaiting');
+              if (oldController) {
+                await Promise.race([
+                  new Promise(resolve => navigator.serviceWorker.addEventListener(
+                    'controllerchange', resolve, {once: true})),
+                  new Promise(resolve => setTimeout(resolve, 2000)),
+                ]);
+              }
+            }
+          }
+        }
+      } catch (_) { /* Offline updates must never corrupt reading data. */ }
+      window.location.replace('/veredra/?updated=' + Date.now());
+    };
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

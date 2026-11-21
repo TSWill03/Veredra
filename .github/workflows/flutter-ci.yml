@@ -57,6 +57,9 @@ jobs:
       - name: Validate migration contract
         run: dart run tool/validate_migrations.dart
 
+      - name: Validate update version contract
+        run: dart run tool/verify_update_version.dart
+
       - name: Build Web at canonical subpath
         run: flutter build web --release --base-href /veredra/ --dart-define-from-file=config/supabase.production.json
 
@@ -90,10 +93,26 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build windows --release --dart-define-from-file=config/supabase.production.json
+      - name: Package per-user Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress --yes }
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler missing' }
+          $match = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+(\d+)'
+          $major = $match.Matches.Groups[1].Value
+          $build = $match.Matches.Groups[2].Value
+          & $iscc "/DAppVersion=$major" "/DBuildNumber=$build" 'windows/installer/veredra.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          if (-not (Test-Path "build/installer/Veredra-Setup-v$major+$build.exe")) {
+            throw 'Expected installer artifact missing'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: veredra-windows
-          path: build/windows/x64/runner/Release
+          path: |
+            build/windows/x64/runner/Release
+            build/installer/Veredra-Setup-*.exe
           if-no-files-found: error
 
   database-security:
