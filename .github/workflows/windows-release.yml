@@ -1,0 +1,93 @@
+name: Windows installer and GitHub Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: veredra-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-release:
+    name: Test, package and publish Windows installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify version and ancestry
+        shell: pwsh
+        run: |
+          $match = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\s*$'
+          if (-not $match) { throw 'Missing semver+build in pubspec.yaml' }
+          $version = $match.Matches.Groups[1].Value
+          if ("${{ github.ref_name }}" -ne "v$version") { throw 'Tag must equal pubspec version' }
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release tag must point to a commit on main' }
+          $configured = Select-String -Path lib/config/app_config.dart -Pattern "defaultValue: '$version'"
+          if (-not $configured) { throw 'Embedded client version differs from pubspec' }
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.9'
+          channel: stable
+          cache: true
+      - name: Verify source and run tests
+        shell: pwsh
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test tool
+          flutter analyze
+          flutter test
+      - name: Build release Windows executable
+        shell: pwsh
+        run: flutter build windows --release --dart-define-from-file=config/supabase.production.json
+      - name: Install Inno Setup and package per-user installer
+        shell: pwsh
+        run: |
+          $exe = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $exe)) {
+            choco install innosetup --no-progress --yes
+          }
+          if (-not (Test-Path $exe)) { throw 'Inno Setup compiler unavailable' }
+          $v = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)').Matches.Groups[1].Value
+          $parts = $v.Split('+')
+          & $exe "/DAppVersion=$($parts[0])" "/DBuildNumber=$($parts[1])" 'windows/installer/veredra.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'ISCC build failed' }
+          $expected = "build/installer/Veredra-Setup-v$v.exe"
+          if (-not (Test-Path $expected)) { throw "Installer missing: $expected" }
+          $hash = (Get-FileHash $expected -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Veredra-Setup-v$v.exe" | Set-Content 'build/installer/SHA256SUMS.txt' -Encoding ascii
+      - name: Upload installer build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veredra-windows-installer
+          path: |
+            build/installer/Veredra-Setup-*.exe
+            build/installer/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish GitHub Release and installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $v = $tag.Substring(1)
+          $setup = "build/installer/Veredra-Setup-$tag.exe"
+          if (-not (Test-Path $setup)) { throw 'Cannot publish absent installer' }
+          $releases = @(gh release list --repo "${{ github.repository }}" --json tagName --limit 100 | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect existing GitHub releases' }
+          if ($releases | Where-Object { $_.tagName -eq $tag }) {
+            gh release upload $tag $setup 'build/installer/SHA256SUMS.txt' --clobber --repo "${{ github.repository }}"
+          } else {
+            gh release create $tag $setup 'build/installer/SHA256SUMS.txt' --verify-tag --generate-notes --title "Veredra $tag" --repo "${{ github.repository }}"
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release upload failed' }

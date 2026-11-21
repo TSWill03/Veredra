@@ -36,6 +36,7 @@ import 'services/sync/supabase_sync_gateway.dart';
 import 'services/sync/sync_coordinator.dart';
 import 'services/sync/sync_preferences_service.dart';
 import 'services/sync/sync_queue.dart';
+import 'services/update/update_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -143,6 +144,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
     annotationService: _annotationService,
   );
   final ProgressService _progressService = ProgressService();
+  final UpdateController _updateController = UpdateController();
   final BookmarkService _bookmarkService = BookmarkService();
   final AnnotationService _annotationService = AnnotationService();
   final ReadingStatsService _readingStatsService = ReadingStatsService();
@@ -176,6 +178,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
         AccountController(const LocalOnlyAuthGateway());
     _diagnostics = widget.diagnostics ?? DiagnosticsService();
     _accountController.addListener(_handleAccountChanged);
+    unawaited(_updateController.initialize());
     _loadAppState();
   }
 
@@ -349,6 +352,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
       _accountController.dispose();
     }
     _syncCoordinator?.dispose();
+    _updateController.dispose();
     super.dispose();
   }
 
@@ -415,6 +419,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
               translationService: _translationService,
               accountController: _accountController,
               syncCoordinator: _syncCoordinator,
+              updateController: _updateController,
               lastBookReference: _lastBookReference,
               fontSize: _fontSize,
               readerFontPreset: _readerFontPreset,
