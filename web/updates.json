@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.1.5",
-  "buildNumber": 7,
-  "notes": "Traducao desktop com checkpoints por capitulo, pausa e retomada, modo rapido experimental e opcao de primeiros 20 capitulos. O original fica intacto."
+  "version": "0.1.6",
+  "buildNumber": 8,
+  "notes": "CTS local (CPU e CUDA experimental) e leitura progressiva dos capitulos ja traduzidos. Revisao de qualidade antes de publicar."
 }

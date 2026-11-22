@@ -178,7 +178,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
         AccountController(const LocalOnlyAuthGateway());
     _diagnostics = widget.diagnostics ?? DiagnosticsService();
     _accountController.addListener(_handleAccountChanged);
-    unawaited(_updateController.initialize());
+    if (!AppConfig.qaMode) unawaited(_updateController.initialize());
     _loadAppState();
   }
 
@@ -399,7 +399,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Veredra',
+      title: AppConfig.qaMode ? 'Veredra QA (local)' : 'Veredra',
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
       theme: _buildTheme(Brightness.light),
@@ -419,7 +419,7 @@ class _VeredraAppState extends State<VeredraApp> with WidgetsBindingObserver {
               translationService: _translationService,
               accountController: _accountController,
               syncCoordinator: _syncCoordinator,
-              updateController: _updateController,
+              updateController: AppConfig.qaMode ? null : _updateController,
               lastBookReference: _lastBookReference,
               fontSize: _fontSize,
               readerFontPreset: _readerFontPreset,

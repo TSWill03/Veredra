@@ -40,11 +40,24 @@ class TranslationPair {
   }
 }
 
+enum TranslationEngineMode {
+  argosSerial,
+  argosFast,
+  ctsCpu,
+  ctsCuda,
+  ctsCuda1024,
+  ctsCudaBeam2
+}
+
 class TranslationRequest {
-  const TranslationRequest(
-      {required this.pair, required this.fast, this.chapterLimit});
+  const TranslationRequest({
+    required this.pair,
+    this.engine = TranslationEngineMode.ctsCpu,
+    this.chapterLimit,
+  });
 
   final TranslationPair pair;
-  final bool fast;
+  final TranslationEngineMode engine;
   final int? chapterLimit;
+  bool get fast => engine == TranslationEngineMode.argosFast;
 }

@@ -2,7 +2,7 @@
 name: txt_webnovel_reader
 description: MVP de leitor continuo para livros em .txt, com foco inicial em desktop.
 publish_to: "none"
-version: 0.1.5+7
+version: 0.1.6+8
 environment:
   sdk: ">=3.4.0 <4.0.0"
 
@@ -37,3 +37,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/cts/cts_text.py
+    - assets/cts/LICENSE

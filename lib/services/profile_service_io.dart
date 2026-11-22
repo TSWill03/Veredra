@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'storage/app_documents_io.dart';
 
 import '../models/app_profile.dart';
 import 'storage/app_storage.dart';
@@ -119,8 +119,7 @@ class ProfileService {
       );
     }
 
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
+    final Directory documentsDirectory = await getVeredraDocumentsDirectory();
     final Directory directory =
         Directory(p.join(documentsDirectory.path, 'profiles'));
     await directory.create(recursive: true);

@@ -24,7 +24,7 @@ class _BookTranslationDialogState extends State<BookTranslationDialog> {
   TranslationEngineStatus? _status;
   bool _isLoading = true;
   bool _isInstalling = false;
-  bool _fast = true;
+  TranslationEngineMode _engine = TranslationEngineMode.ctsCpu;
   bool _preview = false;
   String? _selectedSourceCode;
   String? _selectedTargetCode;
@@ -273,14 +273,46 @@ class _BookTranslationDialogState extends State<BookTranslationDialog> {
                         if (status.isReady &&
                             _mergedPairs(status).isNotEmpty) ...<Widget>[
                           ..._buildPairSelector(status),
-                          SwitchListTile(
-                            value: _fast,
-                            title: const Text('Modo rapido (experimental)'),
-                            subtitle: const Text(
-                                'Processa lotes em modelos locais compativeis. O texto pode variar ligeiramente. Desative para usar o modo original.'),
+                          DropdownButtonFormField<TranslationEngineMode>(
+                            initialValue: _engine,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                labelText: 'Motor de traducao'),
+                            items: const <DropdownMenuItem<
+                                TranslationEngineMode>>[
+                              DropdownMenuItem(
+                                  value: TranslationEngineMode.ctsCpu,
+                                  child: Text('CTS — CPU em lotes (teste)')),
+                              DropdownMenuItem(
+                                  value: TranslationEngineMode.ctsCuda,
+                                  child: Text('CTS — GPU 512 (teste)')),
+                              DropdownMenuItem(
+                                  value: TranslationEngineMode.ctsCuda1024,
+                                  child: Text('CTS — GPU 1024 (teste)')),
+                              DropdownMenuItem(
+                                  value: TranslationEngineMode.ctsCudaBeam2,
+                                  child: Text('CTS — GPU 512, beam 2 (teste)')),
+                              DropdownMenuItem(
+                                  value: TranslationEngineMode.argosSerial,
+                                  child:
+                                      Text('Argos classico (compatibilidade)')),
+                              DropdownMenuItem(
+                                  value: TranslationEngineMode.argosFast,
+                                  child: Text(
+                                      'Argos rapido (checkpoints antigos)')),
+                            ],
                             onChanged: _isInstalling
                                 ? null
-                                : (value) => setState(() => _fast = value),
+                                : (value) {
+                                    if (value != null) {
+                                      setState(() => _engine = value);
+                                    }
+                                  },
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                                'CTS processa texto localmente. Se a GPU nao iniciar, tenta CPU antes do primeiro capitulo. O motor efetivo aparece na leitura. A qualidade ainda esta em avaliacao.'),
                           ),
                           SwitchListTile(
                             value: _preview,
@@ -318,7 +350,7 @@ class _BookTranslationDialogState extends State<BookTranslationDialog> {
                   if (pair != null && pair.installed) {
                     Navigator.of(context).pop(TranslationRequest(
                         pair: pair,
-                        fast: _fast,
+                        engine: _engine,
                         chapterLimit: _preview ? 20 : null));
                   }
                 }

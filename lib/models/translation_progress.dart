@@ -67,3 +67,15 @@ class TranslationPausedException implements Exception {
   String toString() =>
       'Traducao pausada. Inicie novamente com o mesmo livro e idiomas para retomar.';
 }
+
+/// An immutable, already checkpointed chapter. Content is loaded on demand.
+class TranslationReadyChapter {
+  const TranslationReadyChapter({
+    required this.index,
+    required this.title,
+    required this.loadContent,
+  });
+  final int index;
+  final String title;
+  final Future<String> Function() loadContent;
+}

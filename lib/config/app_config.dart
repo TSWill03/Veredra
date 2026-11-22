@@ -6,8 +6,12 @@ class AppConfig {
   // newly published version.json for its own currently running version.
   static const String clientVersion = String.fromEnvironment(
     'VEREDRA_CLIENT_VERSION',
-    defaultValue: '0.1.5+7',
+    defaultValue: '0.1.6+8',
   );
+
+  static const String qaDataRoot =
+      String.fromEnvironment("VEREDRA_QA_DATA_ROOT");
+  static bool get qaMode => qaDataRoot.isNotEmpty;
 
   static const String supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
@@ -43,6 +47,7 @@ class AppConfig {
       : legacySupabaseAnonKey;
 
   static bool get isSupabaseConfigured {
+    if (qaMode) return false;
     final Uri? uri = Uri.tryParse(supabaseUrl);
     final bool allowedScheme = uri?.scheme == 'https' ||
         (uri?.scheme == 'http' &&

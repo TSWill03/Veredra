@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../storage/app_documents_io.dart';
 
 import '../storage/app_storage.dart';
 
@@ -19,6 +19,6 @@ Future<String> storeSyncedBinary(String storageKey, Uint8List bytes) async {
   }
   final AppStorage storage = createAppStorage();
   await storage.writeBytes(key, bytes);
-  final Directory root = await getApplicationDocumentsDirectory();
+  final Directory root = await getVeredraDocumentsDirectory();
   return p.joinAll(<String>[root.path, ...key.split('/')]);
 }
