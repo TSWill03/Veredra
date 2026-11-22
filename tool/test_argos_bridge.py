@@ -1,5 +1,7 @@
 """Test the exact embedded worker, without installing translation models."""
 import json
+import os
+import hashlib
 import sys
 import tempfile
 import types
@@ -78,6 +80,49 @@ class CheckpointTest(unittest.TestCase):
             t.calls.clear()
             ns["translate_book"]("en","pt",str(inp),str(out))
             self.assertIn("changed",t.calls)
+
+class CtsContractTest(unittest.TestCase):
+    def test_pinned_cts_bundle(self):
+        directory = DART.parents[2] / "assets/cts"
+        pin = json.loads((directory / "SOURCE.json").read_text(encoding="utf-8"))
+        self.assertEqual(pin["api_version"], 1)
+        self.assertEqual(hashlib.sha256((directory/"cts_text.py").read_bytes()).hexdigest(),pin["sha256"])
+
+    def test_cts_events_are_emitted_only_after_checkpoint_commit(self):
+        ns=worker()
+        argos=types.ModuleType("argostranslate")
+        argos.settings=types.SimpleNamespace()
+        t=FakeTranslation()
+        target=types.SimpleNamespace(code="pt")
+        source=types.SimpleNamespace(code="en",get_translation=lambda _:t)
+        ns["safe_import_argos"]=lambda:(None,types.SimpleNamespace(get_installed_languages=lambda:[source,target]))
+        got=[]
+        cts=types.ModuleType("cts_text")
+        cts.API_VERSION=1
+        class Engine:
+            def __init__(self,src,tgt,**kwargs):
+                self.profile=kwargs["profile"]
+                self.batch_tokens=kwargs["batch_tokens"]
+                self.beam_size=kwargs["beam_size"]
+                self.fallback_reason=None
+                self.identity={"api":1,"src":src,"tgt":tgt,"profile":self.profile,"batch":self.batch_tokens}
+            def translate(self,text):
+                return text.upper()
+        cts.TextEngine=Engine
+        with tempfile.TemporaryDirectory() as folder, patch.dict(sys.modules,{"argostranslate":argos,"cts_text":cts}), patch.dict(os.environ,{"VEREDRA_CTS_PROFILE":"cuda","VEREDRA_CTS_BATCH_TOKENS":"1024"}):
+            root=Path(folder); inp=root/"input.json"; out=root/"out.json"
+            inp.write_text(json.dumps({"title":"book","chapters":[{"title":"one","content":"first"},{"title":"two","content":"second"}]}),encoding="utf-8")
+            def emit(event):
+                if event["type"]=="chapter_ready":
+                    path=root/"checkpoints"/event["key"]/f'{event["index"]:08d}.json'
+                    self.assertTrue(path.exists())
+                    self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),event["fileDigest"])
+                    self.assertFalse(out.exists())
+                    got.append(event["index"])
+            ns["emit"]=emit
+            ns["translate_book"]("en","pt",str(inp),str(out))
+            self.assertEqual(got,[0,1])
+            self.assertEqual(len(json.loads(out.read_text())["chapters"]),2)
 
 if __name__ == "__main__":
     unittest.main()

@@ -41,6 +41,8 @@ class TranslationService {
     void Function(TranslationProgress value)? onProgress,
     TranslationPause? pause,
     bool fast = false,
+    TranslationEngineMode engine = TranslationEngineMode.argosSerial,
+    void Function(TranslationReadyChapter)? onChapterReady,
     int? chapterLimit,
   }) async {
     _throwUnsupported();

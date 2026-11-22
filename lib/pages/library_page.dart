@@ -12,7 +12,6 @@ import '../models/book_reference.dart';
 import '../models/library_entry.dart';
 import '../models/reader_font_preset.dart';
 import '../models/translation_pair.dart';
-import '../models/translation_progress.dart';
 import '../services/annotation_service.dart';
 import '../services/backup_service.dart';
 import '../services/bookmark_service.dart';
@@ -30,7 +29,7 @@ import '../services/update/update_controller.dart';
 import '../widgets/app_watermark_overlay.dart';
 import '../widgets/book_translation_dialog.dart';
 import '../widgets/platform_cover_image.dart';
-import '../widgets/translation_progress_dialog.dart';
+import 'progressive_translation_page.dart';
 import '../widgets/update_badge_button.dart';
 import 'about_page.dart';
 import 'account_page.dart';
@@ -513,76 +512,42 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    final ValueNotifier<TranslationProgress> progressNotifier =
-        ValueNotifier<TranslationProgress>(
-      const TranslationProgress(
-        stage: 'Preparando traducao',
-        completedChapters: 0,
-        totalChapters: 1,
-      ),
+    final String profileId = widget.currentProfile.id;
+    final result =
+        await Navigator.of(context).push<ProgressiveTranslationResult>(
+      MaterialPageRoute(
+          builder: (context) => ProgressiveTranslationPage(
+                bookTitle: entry.title,
+                run: (pause, onProgress, onChapterReady) async {
+                  final sourceBook =
+                      await widget.bookService.reopenBook(entry.reference);
+                  final book = await widget.translationService.translateBook(
+                    sourceBook: sourceBook,
+                    sourceLanguage: request.pair.source,
+                    targetLanguage: request.pair.target,
+                    fast: request.fast,
+                    engine: request.engine,
+                    chapterLimit: request.chapterLimit,
+                    bookService: widget.bookService,
+                    pause: pause,
+                    onProgress: onProgress,
+                    onChapterReady: onChapterReady,
+                  );
+                  if (mounted && widget.currentProfile.id == profileId) {
+                    await widget.libraryService.upsertBook(book);
+                  } else {
+                    throw StateError('Perfil alterado durante a traducao.');
+                  }
+                  return book;
+                },
+              )),
     );
-
-    final TranslationPause pause = TranslationPause();
-    final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
-    final DialogRoute<void> route = DialogRoute<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) => PopScope(
-        canPop: false,
-        child: ValueListenableBuilder<TranslationProgress>(
-          valueListenable: progressNotifier,
-          builder:
-              (BuildContext context, TranslationProgress value, Widget? child) {
-            return TranslationProgressDialog(
-              bookTitle: entry.title,
-              progress: value,
-              onPause:
-                  pause.requested || value.stage == 'Salvando copia traduzida'
-                      ? null
-                      : () {
-                          pause.request();
-                          progressNotifier.value =
-                              value.copyWith(stage: 'Pausando traducao');
-                        },
-            );
-          },
-        ),
-      ),
-    );
-    final Future<void> closed = navigator.push(route);
-
-    try {
-      final Book sourceBook = await widget.bookService.reopenBook(
-        entry.reference,
-      );
-      final Book translatedBook = await widget.translationService.translateBook(
-        sourceBook: sourceBook,
-        sourceLanguage: request.pair.source,
-        targetLanguage: request.pair.target,
-        fast: request.fast,
-        chapterLimit: request.chapterLimit,
-        bookService: widget.bookService,
-        pause: pause,
-        onProgress: (TranslationProgress value) {
-          if (!pause.requested) progressNotifier.value = value;
-        },
-      );
-
-      await widget.libraryService.upsertBook(translatedBook);
-      await _refreshLibrary();
-      if (!mounted) {
-        return;
-      }
-      _showMessage('Nova copia traduzida criada: ${translatedBook.title}');
-    } catch (error) {
-      if (mounted) {
-        _showMessage(error.toString());
-      }
-    } finally {
-      // Close only the translation route, never an unrelated reader/settings route.
-      if (route.isActive) navigator.removeRoute(route);
-      await closed;
-      progressNotifier.dispose();
+    if (!mounted || widget.currentProfile.id != profileId) return;
+    await _refreshLibrary();
+    if (result != null && mounted) {
+      await _openBook(result.book,
+          initialChapterIndex: result.chapterIndex,
+          initialChapterProgress: result.chapterProgress);
     }
   }
 

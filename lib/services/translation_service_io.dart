@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'storage/app_documents_io.dart';
 
 import '../models/book.dart';
 import '../models/generated_chapter.dart';
@@ -106,6 +108,8 @@ class TranslationService {
     void Function(TranslationProgress value)? onProgress,
     TranslationPause? pause,
     bool fast = false,
+    TranslationEngineMode engine = TranslationEngineMode.argosSerial,
+    void Function(TranslationReadyChapter)? onChapterReady,
     int? chapterLimit,
   }) async {
     _ensureLocalTranslationSupported();
@@ -171,8 +175,45 @@ class TranslationService {
         ],
         pause: pause,
         fast: fast,
+        engine: engine,
         onJsonLine: (Map<String, dynamic> payload) {
-          if (payload['type'] == 'progress') {
+          if (payload['type'] == 'chapter_ready') {
+            final Object? index = payload['index'];
+            final Object? key = payload['key'];
+            final Object? digest = payload['fileDigest'];
+            final Object? title = payload['title'];
+            if (index is int &&
+                index >= 0 &&
+                index < expectedChapters &&
+                key is String &&
+                RegExp(r'^[0-9a-f]{64}$').hasMatch(key) &&
+                digest is String &&
+                RegExp(r'^[0-9a-f]{64}$').hasMatch(digest) &&
+                title is String) {
+              final File checkpoint = File(p.join(
+                  runtimeDirectory.path,
+                  'checkpoints',
+                  key,
+                  '${index.toString().padLeft(8, '0')}.json'));
+              onChapterReady?.call(TranslationReadyChapter(
+                index: index,
+                title: title,
+                loadContent: () async {
+                  final List<int> bytes = await checkpoint.readAsBytes();
+                  if (sha256.convert(bytes).toString() != digest) {
+                    throw StateError('Checkpoint de traducao alterado.');
+                  }
+                  final Object? data = jsonDecode(utf8.decode(bytes));
+                  if (data is! Map<String, dynamic> ||
+                      data['index'] != index ||
+                      data['content'] is! String) {
+                    throw StateError('Checkpoint de traducao invalido.');
+                  }
+                  return data['content'] as String;
+                },
+              ));
+            }
+          } else if (payload['type'] == 'progress') {
             onProgress?.call(
               TranslationProgress(
                 stage: 'Traduzindo capitulos',
@@ -270,7 +311,12 @@ class TranslationService {
       return _cachedPythonCommand;
     }
 
+    final String? configuredPython = Platform.environment['VEREDRA_PYTHON'];
     final List<_PythonCommand> candidates = <_PythonCommand>[
+      if (configuredPython != null &&
+          p.isAbsolute(configuredPython) &&
+          await File(configuredPython).exists())
+        _PythonCommand(executable: configuredPython, args: const <String>[]),
       const _PythonCommand(executable: 'python', args: <String>[]),
       const _PythonCommand(executable: 'py', args: <String>['-3']),
       const _PythonCommand(executable: 'python3', args: <String>[]),
@@ -319,8 +365,20 @@ class TranslationService {
     required void Function(Map<String, dynamic> payload) onJsonLine,
     TranslationPause? pause,
     required bool fast,
+    required TranslationEngineMode engine,
   }) async {
     pause?.check();
+    final String ctsProfile = switch (engine) {
+      TranslationEngineMode.ctsCpu => 'cpu',
+      TranslationEngineMode.ctsCuda ||
+      TranslationEngineMode.ctsCuda1024 ||
+      TranslationEngineMode.ctsCudaBeam2 =>
+        'cuda',
+      _ => '',
+    };
+    if (ctsProfile.isNotEmpty) {
+      await _prepareCtsRuntime();
+    }
     final Process process = await Process.start(
       command.executable,
       <String>[...command.args, await _helperScriptPath(), ...helperArgs],
@@ -329,6 +387,11 @@ class TranslationService {
       environment: <String, String>{
         "PYTHONIOENCODING": "utf-8",
         "VEREDRA_ARGOS_BATCH": fast ? "1" : "0",
+        "VEREDRA_CTS_PROFILE": ctsProfile,
+        "VEREDRA_CTS_BATCH_TOKENS":
+            engine == TranslationEngineMode.ctsCuda1024 ? "1024" : "512",
+        "VEREDRA_CTS_BEAM_SIZE":
+            engine == TranslationEngineMode.ctsCudaBeam2 ? "2" : "4",
       },
     );
 
@@ -432,6 +495,18 @@ class TranslationService {
     ].where((String value) => value.isNotEmpty).join('\n').trim();
   }
 
+  Future<void> _prepareCtsRuntime() async {
+    final Directory directory = await _runtimeDirectory();
+    final file = File(p.join(directory.path, 'cts_text.py'));
+    final data = await rootBundle.load('assets/cts/cts_text.py');
+    final bytes =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    if (!await file.exists() ||
+        sha256.convert(await file.readAsBytes()) != sha256.convert(bytes)) {
+      await file.writeAsBytes(bytes, flush: true);
+    }
+  }
+
   Future<String> _helperScriptPath() async {
     final Directory runtimeDirectory = await _runtimeDirectory();
     final File helperFile = File(
@@ -445,8 +520,7 @@ class TranslationService {
   }
 
   Future<Directory> _runtimeDirectory() async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
+    final Directory documentsDirectory = await getVeredraDocumentsDirectory();
     final Directory directory = Directory(
       p.join(
         documentsDirectory.path,
@@ -784,7 +858,7 @@ def checkpoint_directory(input_path, from_code, to_code, translation):
             versions.append(importlib.metadata.version(name))
         except importlib.metadata.PackageNotFoundError:
             versions.append("unknown")
-    identity = [from_code, to_code, versions, model_identity(translation.original),
+    identity = translation.identity if hasattr(translation, "identity") else [from_code, to_code, versions, model_identity(translation.original),
                 translation.enabled, str(settings.device), str(settings.compute_type),
                 str(settings.chunk_type), settings.beam_size, settings.batch_size,
                 settings.intra_threads, settings.inter_threads, "batch-v1"]
@@ -850,7 +924,23 @@ def translate_book(from_code, to_code, input_path, output_path, chapter_limit=No
         source_chapters = source_chapters[:max(0, chapter_limit)]
     translated_chapters = []
     total_chapters = len(source_chapters)
-    translation = BatchTranslation(translation)
+    cts_profile = os.environ.get("VEREDRA_CTS_PROFILE", "")
+    if cts_profile:
+        from cts_text import TextEngine, API_VERSION
+        if API_VERSION != 1:
+            raise RuntimeError("CTS_API_VERSION_UNSUPPORTED")
+        translation = TextEngine(from_code, to_code, profile=cts_profile,
+                                 batch_tokens=int(os.environ.get("VEREDRA_CTS_BATCH_TOKENS", "512")),
+                                 beam_size=int(os.environ.get("VEREDRA_CTS_BEAM_SIZE", "4")),
+                                 allow_cpu_fallback=True)
+        translate_text = translation.translate
+        engine_label = f"CTS {translation.profile.upper()} | lote {translation.batch_tokens} | beam {translation.beam_size}"
+        if translation.fallback_reason:
+            engine_label += " (fallback CUDA -> CPU)"
+    else:
+        translation = BatchTranslation(translation)
+        translate_text = lambda text: translate_document(translation, text)
+        engine_label = "Argos em lotes" if translation.enabled else "Argos classico"
     checkpoint_dir = checkpoint_directory(input_path, from_code, to_code, translation)
 
     for index, chapter in enumerate(source_chapters):
@@ -861,23 +951,26 @@ def translate_book(from_code, to_code, input_path, output_path, chapter_limit=No
                 "completedChapters": index,
                 "totalChapters": total_chapters,
                 "chapterTitle": chapter_title,
-                "message": f"Traduzindo {chapter_title}",
+                "message": f"{engine_label}: traduzindo {chapter_title}",
             }
         )
         checkpoint_path = checkpoint_dir / f"{index:08d}.json"
         translated = load_checkpoint(checkpoint_path, index)
         if translated is None:
             translated = {
-                "title": translate_document(translation, chapter_title),
-                "content": translate_document(translation, str(chapter.get("content", "") or "")),
+                "title": translate_text(chapter_title),
+                "content": translate_text(str(chapter.get("content", "") or "")),
             }
             atomic_json(checkpoint_path, {"index": index, **translated,
                                            "digest": checkpoint_hash(translated["title"], translated["content"])})
         translated_chapters.append(translated)
+        emit({"type": "chapter_ready", "index": index, "title": translated["title"],
+              "key": checkpoint_dir.name,
+              "fileDigest": hashlib.sha256(checkpoint_path.read_bytes()).hexdigest()})
 
     output = {
-        "title": translate_document(translation, str(payload.get("title", "") or "")),
-        "description": translate_document(translation, str(payload.get("description", "") or "")),
+        "title": translate_text(str(payload.get("title", "") or "")),
+        "description": translate_text(str(payload.get("description", "") or "")),
         "chapters": translated_chapters,
     }
 

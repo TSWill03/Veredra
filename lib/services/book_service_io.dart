@@ -12,7 +12,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:image/image.dart' as img;
 import 'package:markdown/markdown.dart' as markdown;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'storage/app_documents_io.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../models/book.dart';
@@ -1359,8 +1359,7 @@ class BookService {
   }
 
   Future<Directory> _profileStorageDirectory(String folderName) async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
+    final Directory documentsDirectory = await getVeredraDocumentsDirectory();
     final Directory directory = Directory(
       p.join(
         documentsDirectory.path,

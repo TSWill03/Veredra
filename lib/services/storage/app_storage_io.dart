@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'app_documents_io.dart';
 
 import 'app_storage_base.dart';
 
@@ -67,15 +67,13 @@ class IoAppStorage implements AppStorage {
   }
 
   Future<File> _fileForKey(String key) async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
+    final Directory documentsDirectory = await getVeredraDocumentsDirectory();
     final List<String> segments = normalizeStorageKey(key).split('/');
     return File(p.joinAll(<String>[documentsDirectory.path, ...segments]));
   }
 
   Future<Directory> _directoryForKey(String key) async {
-    final Directory documentsDirectory =
-        await getApplicationDocumentsDirectory();
+    final Directory documentsDirectory = await getVeredraDocumentsDirectory();
     final List<String> segments = normalizeStorageKey(key).split('/');
     return Directory(p.joinAll(<String>[documentsDirectory.path, ...segments]));
   }
