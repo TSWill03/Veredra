@@ -6,7 +6,7 @@ class AppConfig {
   // newly published version.json for its own currently running version.
   static const String clientVersion = String.fromEnvironment(
     'VEREDRA_CLIENT_VERSION',
-    defaultValue: '0.1.4+6',
+    defaultValue: '0.1.5+7',
   );
 
   static const String supabaseUrl = String.fromEnvironment(

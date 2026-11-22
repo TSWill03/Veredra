@@ -24,6 +24,8 @@ class _BookTranslationDialogState extends State<BookTranslationDialog> {
   TranslationEngineStatus? _status;
   bool _isLoading = true;
   bool _isInstalling = false;
+  bool _fast = true;
+  bool _preview = false;
   String? _selectedSourceCode;
   String? _selectedTargetCode;
   String? _actionError;
@@ -268,8 +270,29 @@ class _BookTranslationDialogState extends State<BookTranslationDialog> {
                             ),
                           ),
                         ],
-                        if (status.isReady && _mergedPairs(status).isNotEmpty)
+                        if (status.isReady &&
+                            _mergedPairs(status).isNotEmpty) ...<Widget>[
                           ..._buildPairSelector(status),
+                          SwitchListTile(
+                            value: _fast,
+                            title: const Text('Modo rapido (experimental)'),
+                            subtitle: const Text(
+                                'Processa lotes em modelos locais compativeis. O texto pode variar ligeiramente. Desative para usar o modo original.'),
+                            onChanged: _isInstalling
+                                ? null
+                                : (value) => setState(() => _fast = value),
+                          ),
+                          SwitchListTile(
+                            value: _preview,
+                            title:
+                                const Text('Somente os primeiros 20 capitulos'),
+                            subtitle: const Text(
+                                'Cria uma copia parcial para comecar a leitura. A traducao completa reutiliza os checkpoints do mesmo modo.'),
+                            onChanged: _isInstalling
+                                ? null
+                                : (value) => setState(() => _preview = value),
+                          ),
+                        ],
                         if (status.isReady &&
                             _mergedPairs(status).isEmpty) ...<Widget>[
                           const SizedBox(height: 16),
@@ -293,7 +316,10 @@ class _BookTranslationDialogState extends State<BookTranslationDialog> {
                       _targetPairs(_mergedPairs(status!));
                   final TranslationPair? pair = _selectedPair(targetPairs);
                   if (pair != null && pair.installed) {
-                    Navigator.of(context).pop(pair);
+                    Navigator.of(context).pop(TranslationRequest(
+                        pair: pair,
+                        fast: _fast,
+                        chapterLimit: _preview ? 20 : null));
                   }
                 }
               : null,

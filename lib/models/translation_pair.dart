@@ -39,3 +39,12 @@ class TranslationPair {
     );
   }
 }
+
+class TranslationRequest {
+  const TranslationRequest(
+      {required this.pair, required this.fast, this.chapterLimit});
+
+  final TranslationPair pair;
+  final bool fast;
+  final int? chapterLimit;
+}

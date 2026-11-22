@@ -37,3 +37,33 @@ class TranslationProgress {
     );
   }
 }
+
+/// Job-scoped pause signal. Completed checkpoints remain on disk.
+class TranslationPause {
+  bool _requested = false;
+  void Function()? _onPause;
+  bool get requested => _requested;
+
+  void request() {
+    if (_requested) return;
+    _requested = true;
+    _onPause?.call();
+  }
+
+  void attach(void Function()? callback) {
+    _onPause = callback;
+    if (_requested) callback?.call();
+  }
+
+  void check() {
+    if (_requested) throw const TranslationPausedException();
+  }
+}
+
+class TranslationPausedException implements Exception {
+  const TranslationPausedException();
+
+  @override
+  String toString() =>
+      'Traducao pausada. Inicie novamente com o mesmo livro e idiomas para retomar.';
+}

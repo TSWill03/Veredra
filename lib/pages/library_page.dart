@@ -500,7 +500,7 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    final TranslationPair? pair = await showDialog<TranslationPair>(
+    final TranslationRequest? request = await showDialog<TranslationRequest>(
       context: context,
       builder: (BuildContext context) {
         return BookTranslationDialog(
@@ -509,7 +509,7 @@ class _LibraryPageState extends State<LibraryPage> {
         );
       },
     );
-    if (pair == null || !mounted) {
+    if (request == null || !mounted) {
       return;
     }
 
@@ -522,22 +522,34 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
 
-    showDialog<void>(
+    final TranslationPause pause = TranslationPause();
+    final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
+    final DialogRoute<void> route = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
-        return ValueListenableBuilder<TranslationProgress>(
+      builder: (BuildContext context) => PopScope(
+        canPop: false,
+        child: ValueListenableBuilder<TranslationProgress>(
           valueListenable: progressNotifier,
           builder:
               (BuildContext context, TranslationProgress value, Widget? child) {
             return TranslationProgressDialog(
               bookTitle: entry.title,
               progress: value,
+              onPause:
+                  pause.requested || value.stage == 'Salvando copia traduzida'
+                      ? null
+                      : () {
+                          pause.request();
+                          progressNotifier.value =
+                              value.copyWith(stage: 'Pausando traducao');
+                        },
             );
           },
-        );
-      },
+        ),
+      ),
     );
+    final Future<void> closed = navigator.push(route);
 
     try {
       final Book sourceBook = await widget.bookService.reopenBook(
@@ -545,11 +557,14 @@ class _LibraryPageState extends State<LibraryPage> {
       );
       final Book translatedBook = await widget.translationService.translateBook(
         sourceBook: sourceBook,
-        sourceLanguage: pair.source,
-        targetLanguage: pair.target,
+        sourceLanguage: request.pair.source,
+        targetLanguage: request.pair.target,
+        fast: request.fast,
+        chapterLimit: request.chapterLimit,
         bookService: widget.bookService,
+        pause: pause,
         onProgress: (TranslationProgress value) {
-          progressNotifier.value = value;
+          if (!pause.requested) progressNotifier.value = value;
         },
       );
 
@@ -558,20 +573,15 @@ class _LibraryPageState extends State<LibraryPage> {
       if (!mounted) {
         return;
       }
-      final NavigatorState navigator = Navigator.of(context);
-      if (navigator.canPop()) {
-        navigator.pop();
-      }
       _showMessage('Nova copia traduzida criada: ${translatedBook.title}');
     } catch (error) {
       if (mounted) {
-        final NavigatorState navigator = Navigator.of(context);
-        if (navigator.canPop()) {
-          navigator.pop();
-        }
         _showMessage(error.toString());
       }
     } finally {
+      // Close only the translation route, never an unrelated reader/settings route.
+      if (route.isActive) navigator.removeRoute(route);
+      await closed;
       progressNotifier.dispose();
     }
   }
