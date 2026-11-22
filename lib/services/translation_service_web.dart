@@ -39,6 +39,9 @@ class TranslationService {
     required TranslationLanguage targetLanguage,
     required BookService bookService,
     void Function(TranslationProgress value)? onProgress,
+    TranslationPause? pause,
+    bool fast = false,
+    int? chapterLimit,
   }) async {
     _throwUnsupported();
   }

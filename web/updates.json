@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.1.4",
-  "buildNumber": 6,
-  "notes": "Central de atualizacoes com indicador azul no Veredra e instalador Windows com atualizacao automatizada por consentimento. Corrigida a verificacao de URLs de releases do GitHub que codificam o sinal + como %2B, garantindo o download seguro. Preservados livros, progresso e dados locais."
+  "version": "0.1.5",
+  "buildNumber": 7,
+  "notes": "Traducao desktop com checkpoints por capitulo, pausa e retomada, modo rapido experimental e opcao de primeiros 20 capitulos. O original fica intacto."
 }

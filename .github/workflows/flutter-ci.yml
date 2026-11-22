@@ -48,6 +48,9 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Test translation checkpoint worker (no models)
+        run: python3 tool/test_argos_bridge.py
+
       - name: Test with coverage
         run: flutter test --coverage
 

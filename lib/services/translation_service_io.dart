@@ -17,7 +17,6 @@ import 'book_service.dart';
 
 class TranslationService {
   static const Duration _commandTimeout = Duration(seconds: 60);
-  static const Duration _translationTimeout = Duration(hours: 2);
 
   String _activeProfileId = 'principal';
   _PythonCommand? _cachedPythonCommand;
@@ -71,15 +70,12 @@ class TranslationService {
   Future<void> installArgosPackage() async {
     _ensureLocalTranslationSupported();
     final _PythonCommand command = await _requirePythonCommand();
-    final _ProcessResultData result = await _runCommand(
-      command,
-      const <String>[
-        '-m',
-        'pip',
-        'install',
-        'argostranslate',
-      ],
-    );
+    final _ProcessResultData result = await _runCommand(command, const <String>[
+      '-m',
+      'pip',
+      'install',
+      'argostranslate',
+    ]);
     if (result.exitCode != 0) {
       throw StateError(
         'Nao foi possivel instalar o Argos Translate.\n${_compactOutput(result)}',
@@ -108,6 +104,9 @@ class TranslationService {
     required TranslationLanguage targetLanguage,
     required BookService bookService,
     void Function(TranslationProgress value)? onProgress,
+    TranslationPause? pause,
+    bool fast = false,
+    int? chapterLimit,
   }) async {
     _ensureLocalTranslationSupported();
     if (!sourceBook.usesTextReader) {
@@ -119,17 +118,28 @@ class TranslationService {
     final _PythonCommand command = await _requirePythonCommand();
     final Directory runtimeDirectory = await _runtimeDirectory();
     final File inputFile = File(
-      p.join(runtimeDirectory.path,
-          'translation_input_${DateTime.now().microsecondsSinceEpoch}.json'),
+      p.join(
+        runtimeDirectory.path,
+        'translation_input_${DateTime.now().microsecondsSinceEpoch}.json',
+      ),
     );
     final File outputFile = File(
-      p.join(runtimeDirectory.path,
-          'translation_output_${DateTime.now().microsecondsSinceEpoch}.json'),
+      p.join(
+        runtimeDirectory.path,
+        'translation_output_${DateTime.now().microsecondsSinceEpoch}.json',
+      ),
     );
 
     try {
+      pause?.check();
       final List<GeneratedChapter> sourceChapters =
           await bookService.exportBookChapters(sourceBook);
+      final int expectedChapters = chapterLimit == null
+          ? sourceChapters.length
+          : chapterLimit.clamp(0, sourceChapters.length);
+      if (expectedChapters == 0) {
+        throw StateError('Nenhum capitulo para traduzir.');
+      }
       final Map<String, dynamic> inputPayload = <String, dynamic>{
         'title': sourceBook.title,
         'description': sourceBook.reference.description,
@@ -138,12 +148,13 @@ class TranslationService {
             .toList(growable: false),
       };
       await inputFile.writeAsString(jsonEncode(inputPayload), flush: true);
+      pause?.check();
 
       onProgress?.call(
         TranslationProgress(
           stage: 'Preparando traducao',
           completedChapters: 0,
-          totalChapters: sourceChapters.length,
+          totalChapters: expectedChapters,
           detail: 'Carregando capitulos para o motor local.',
         ),
       );
@@ -156,7 +167,10 @@ class TranslationService {
           targetLanguage.code,
           inputFile.path,
           outputFile.path,
+          if (chapterLimit != null) expectedChapters.toString(),
         ],
+        pause: pause,
+        fast: fast,
         onJsonLine: (Map<String, dynamic> payload) {
           if (payload['type'] == 'progress') {
             onProgress?.call(
@@ -165,7 +179,7 @@ class TranslationService {
                 completedChapters:
                     (payload['completedChapters'] as num?)?.toInt() ?? 0,
                 totalChapters: (payload['totalChapters'] as num?)?.toInt() ??
-                    sourceChapters.length,
+                    expectedChapters,
                 currentChapterTitle: payload['chapterTitle'] as String?,
                 detail: payload['message'] as String?,
               ),
@@ -174,6 +188,7 @@ class TranslationService {
         },
       );
 
+      pause?.check();
       if (!await outputFile.exists()) {
         throw StateError(
           'O motor de traducao nao gerou o arquivo de saida esperado.\n${lines.join('\n')}',
@@ -190,8 +205,10 @@ class TranslationService {
               .whereType<Map<String, dynamic>>()
               .map(GeneratedChapter.fromJson)
               .toList(growable: false);
-      if (translatedChapters.isEmpty) {
-        throw StateError('Nenhum capitulo traduzido foi produzido.');
+      if (translatedChapters.isEmpty ||
+          translatedChapters.length != expectedChapters) {
+        throw StateError(
+            'A traducao nao produziu todos os capitulos esperados.');
       }
 
       onProgress?.call(
@@ -212,7 +229,9 @@ class TranslationService {
 
       return await bookService.createTranslatedBook(
         sourceBook: sourceBook,
-        title: translatedTitle,
+        title: expectedChapters < sourceChapters.length
+            ? "$translatedTitle [Parcial $expectedChapters/${sourceChapters.length}]"
+            : translatedTitle,
         chapters: translatedChapters,
         sourceLanguage: sourceLanguage,
         targetLanguage: targetLanguage,
@@ -279,10 +298,10 @@ class TranslationService {
     _PythonCommand command,
     List<String> helperArgs,
   ) async {
-    final _ProcessResultData result = await _runCommand(
-      command,
-      <String>[await _helperScriptPath(), ...helperArgs],
-    );
+    final _ProcessResultData result = await _runCommand(command, <String>[
+      await _helperScriptPath(),
+      ...helperArgs,
+    ]);
     if (result.exitCode != 0) {
       throw StateError(_compactOutput(result));
     }
@@ -298,15 +317,34 @@ class TranslationService {
     _PythonCommand command,
     List<String> helperArgs, {
     required void Function(Map<String, dynamic> payload) onJsonLine,
+    TranslationPause? pause,
+    required bool fast,
   }) async {
+    pause?.check();
     final Process process = await Process.start(
       command.executable,
       <String>[...command.args, await _helperScriptPath(), ...helperArgs],
-      runInShell: Platform.isWindows,
+      runInShell: false,
       mode: ProcessStartMode.normal,
+      environment: <String, String>{
+        "PYTHONIOENCODING": "utf-8",
+        "VEREDRA_ARGOS_BATCH": fast ? "1" : "0",
+      },
     );
 
+    pause?.attach(() => process.kill());
     final List<String> stdoutLines = <String>[];
+    bool stalled = false;
+    Timer? watchdog;
+    void resetWatchdog() {
+      watchdog?.cancel();
+      watchdog = Timer(const Duration(minutes: 20), () {
+        stalled = true;
+        process.kill();
+      });
+    }
+
+    resetWatchdog();
     final StreamSubscription<String> stdoutSubscription = process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
@@ -314,6 +352,8 @@ class TranslationService {
       if (line.trim().isEmpty) {
         return;
       }
+      resetWatchdog();
+      if (stdoutLines.length >= 100) stdoutLines.removeAt(0);
       stdoutLines.add(line);
       final dynamic decoded = _tryDecodeJson(line);
       if (decoded is Map<String, dynamic>) {
@@ -321,18 +361,27 @@ class TranslationService {
       }
     });
 
-    final String stderr = await process.stderr.transform(utf8.decoder).join();
-    final int exitCode = await process.exitCode.timeout(
-      _translationTimeout,
-      onTimeout: () {
-        process.kill();
-        throw TimeoutException(
-          'A traducao local excedeu o tempo maximo permitido.',
-          _translationTimeout,
-        );
-      },
-    );
-    await stdoutSubscription.cancel();
+    // Drain both streams concurrently. A book has no fixed wall-clock limit;
+    // completed chapters are checkpointed by the worker.
+    final Future<String> stderrFuture =
+        process.stderr.transform(utf8.decoder).join();
+    final Future<void> stdoutDone = stdoutSubscription.asFuture<void>();
+    final int exitCode;
+    final String stderr;
+    try {
+      exitCode = await process.exitCode;
+      stderr = await stderrFuture;
+      await stdoutDone;
+    } finally {
+      watchdog?.cancel();
+      pause?.attach(null);
+    }
+    pause?.check();
+    if (stalled) {
+      throw TimeoutException(
+        "Motor sem progresso por 20 minutos. Reinicie a traducao para retomar os capitulos salvos.",
+      );
+    }
 
     if (exitCode != 0) {
       final String output = <String>[
@@ -362,10 +411,13 @@ class TranslationService {
     List<String> args,
   ) async {
     final ProcessResult result = await Process.run(
-      command.executable,
-      <String>[...command.args, ...args],
-      runInShell: Platform.isWindows,
-    ).timeout(_commandTimeout);
+            command.executable,
+            <String>[
+              ...command.args,
+              ...args,
+            ],
+            runInShell: Platform.isWindows)
+        .timeout(_commandTimeout);
     return _ProcessResultData(
       exitCode: result.exitCode,
       stdout: '${result.stdout ?? ''}'.trim(),
@@ -382,8 +434,9 @@ class TranslationService {
 
   Future<String> _helperScriptPath() async {
     final Directory runtimeDirectory = await _runtimeDirectory();
-    final File helperFile =
-        File(p.join(runtimeDirectory.path, 'argos_bridge.py'));
+    final File helperFile = File(
+      p.join(runtimeDirectory.path, 'argos_bridge.py'),
+    );
     if (!await helperFile.exists() ||
         await helperFile.readAsString() != _helperScriptSource) {
       await helperFile.writeAsString(_helperScriptSource, flush: true);
@@ -415,10 +468,7 @@ class TranslationService {
 }
 
 class _PythonCommand {
-  const _PythonCommand({
-    required this.executable,
-    required this.args,
-  });
+  const _PythonCommand({required this.executable, required this.args});
 
   final String executable;
   final List<String> args;
@@ -437,9 +487,14 @@ class _ProcessResultData {
 }
 
 const String _helperScriptSource = r'''
+import hashlib
+import importlib.metadata
 import json
+import os
+from pathlib import Path
 import re
 import sys
+import tempfile
 
 
 def emit(payload):
@@ -600,28 +655,182 @@ def split_large_piece(text, limit=1400):
     return pieces
 
 
+class BatchTranslation:
+    """Batch direct Argos models without changing the decoding parameters."""
+    def __init__(self, translation):
+        self.original = translation
+        self.underlying = getattr(translation, "underlying", translation)
+        self.enabled = False
+        self.translator = None
+        self.settings = None
+        try:
+            from argostranslate import settings, translate
+            # The internal API is intentionally guarded; other versions
+            # and pivot/composite routes retain the supported serial path.
+            if (importlib.metadata.version("argostranslate") == "1.11.0"
+                    and isinstance(self.underlying, translate.PackageTranslation)
+                    and settings.device == "cpu"
+                    and os.environ.get("VEREDRA_ARGOS_BATCH", "0") != "0"):
+                self.settings = settings
+                self.enabled = True
+        except (ImportError, AttributeError, importlib.metadata.PackageNotFoundError):
+            pass
+
+    def translate_many(self, chunks):
+        if not self.enabled or not chunks:
+            return [self.original.translate(chunk) for chunk in chunks]
+        try:
+            return self._batch(chunks)
+        except Exception as exc:
+            # Fall back once per job, without logging private source text.
+            print("Argos batch fallback: " + type(exc).__name__, file=sys.stderr)
+            self.enabled = False
+            return [self.original.translate(chunk) for chunk in chunks]
+
+    def _batch(self, chunks):
+        import ctranslate2
+        settings = self.settings
+        pkg = self.underlying.pkg
+        if self.translator is None:
+            self.translator = ctranslate2.Translator(
+                str(pkg.package_path / "model"), device="cpu",
+                inter_threads=settings.inter_threads,
+                intra_threads=settings.intra_threads or min(4, os.cpu_count() or 1),
+                compute_type=settings.compute_type,
+            )
+        output = []
+        # Bound preprocessing and the size of a single batch request.
+        for start in range(0, len(chunks), 64):
+            subset = chunks[start:start + 64]
+            groups = []
+            widths = []
+            for chunk in subset:
+                paragraphs = chunk.split("\n")
+                widths.append(len(paragraphs))
+                for paragraph in paragraphs:
+                    groups.append([pkg.tokenizer.encode(sentence)
+                                   for sentence in self.underlying.sentencizer.split_sentences(paragraph)]
+                                  if paragraph.strip() else [])
+            flat = [sentence for group in groups for sentence in group]
+            prefix = [[pkg.target_prefix]] * len(flat) if pkg.target_prefix else None
+            results = self.translator.translate_batch(
+                flat, target_prefix=prefix, replace_unknowns=True,
+                max_batch_size=max(512, settings.batch_size), batch_type="tokens",
+                beam_size=settings.beam_size, num_hypotheses=1,
+                length_penalty=0.2, return_scores=True,
+            ) if flat else []
+            if len(results) != len(flat):
+                raise RuntimeError("invalid batch size")
+            paragraphs = []
+            offset = 0
+            for group in groups:
+                tokens = [token for result in results[offset:offset + len(group)]
+                          for token in result.hypotheses[0]]
+                offset += len(group)
+                value = pkg.tokenizer.decode(tokens) if tokens else ""
+                if pkg.target_prefix and value.startswith(pkg.target_prefix):
+                    value = value[len(pkg.target_prefix):]
+                paragraphs.append(value.removeprefix(" "))
+            offset = 0
+            for chunk, width in zip(subset, widths):
+                value = "\n".join(paragraphs[offset:offset + width]).lstrip("\n")
+                offset += width
+                if chunk.strip() and not value.strip():
+                    raise RuntimeError("empty batch translation")
+                output.append(value)
+        return output
+
+
 def translate_document(translation, text):
     normalized = (text or "").replace("\r\n", "\n")
     parts = re.split(r"(\n\s*\n+)", normalized)
-    translated_parts = []
-
+    chunks = []
+    layout = []
     for part in parts:
         if not part:
             continue
-        if re.fullmatch(r"\n\s*\n+", part):
-            translated_parts.append(part)
-            continue
-        if not part.strip():
-            translated_parts.append(part)
-            continue
+        if re.fullmatch(r"\n\s*\n+", part) or not part.strip():
+            layout.append(part)
+        else:
+            pieces = split_large_piece(part)
+            layout.append((len(chunks), len(chunks) + len(pieces)))
+            chunks.extend(pieces)
+    translated = translation.translate_many(chunks)
+    return "".join(part if isinstance(part, str)
+                   else "".join(translated[part[0]:part[1]])
+                   for part in layout).strip()
 
-        chunks = split_large_piece(part)
-        translated_parts.append("".join(translation.translate(chunk) for chunk in chunks))
 
-    return "".join(translated_parts).strip()
+def model_identity(translation):
+    underlying = getattr(translation, "underlying", translation)
+    pkg = getattr(underlying, "pkg", None)
+    if pkg is not None:
+        model = pkg.package_path / "model" / "model.bin"
+        stat = model.stat()
+        return [str(pkg.package_path), str(getattr(pkg, "package_version", "")),
+                stat.st_size, stat.st_mtime_ns]
+    if hasattr(underlying, "t1") and hasattr(underlying, "t2"):
+        return [model_identity(underlying.t1), model_identity(underlying.t2)]
+    return [type(underlying).__name__, str(getattr(getattr(underlying, "from_lang", None), "code", "")),
+            str(getattr(getattr(underlying, "to_lang", None), "code", ""))]
 
 
-def translate_book(from_code, to_code, input_path, output_path):
+def checkpoint_directory(input_path, from_code, to_code, translation):
+    from argostranslate import settings
+    digest = hashlib.sha256(Path(input_path).read_bytes())
+    versions = []
+    for name in ("argostranslate", "ctranslate2"):
+        try:
+            versions.append(importlib.metadata.version(name))
+        except importlib.metadata.PackageNotFoundError:
+            versions.append("unknown")
+    identity = [from_code, to_code, versions, model_identity(translation.original),
+                translation.enabled, str(settings.device), str(settings.compute_type),
+                str(settings.chunk_type), settings.beam_size, settings.batch_size,
+                settings.intra_threads, settings.inter_threads, "batch-v1"]
+    digest.update(json.dumps(identity, ensure_ascii=False).encode("utf-8"))
+    root = checkpoint_root(input_path) / digest.hexdigest()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def checkpoint_root(input_path):
+    root = Path(input_path).parent / "checkpoints"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def atomic_json(path, value):
+    fd, temp_path = tempfile.mkstemp(prefix=".partial-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(value, fh, ensure_ascii=False)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+def checkpoint_hash(title, content):
+    return hashlib.sha256(json.dumps([title, content], ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def load_checkpoint(path, index):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if (data.get("index") == index and
+                isinstance(data.get("title"), str) and
+                isinstance(data.get("content"), str) and
+                data.get("digest") == checkpoint_hash(data["title"], data["content"])):
+            return {"title": data["title"], "content": data["content"]}
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
+
+
+def translate_book(from_code, to_code, input_path, output_path, chapter_limit=None):
     _, translate = safe_import_argos()
     with open(input_path, "r", encoding="utf-8") as fh:
         payload = json.load(fh)
@@ -637,8 +846,12 @@ def translate_book(from_code, to_code, input_path, output_path):
         raise RuntimeError("O motor local nao encontrou traducao para o par selecionado.")
 
     source_chapters = payload.get("chapters", [])
+    if chapter_limit is not None:
+        source_chapters = source_chapters[:max(0, chapter_limit)]
     translated_chapters = []
     total_chapters = len(source_chapters)
+    translation = BatchTranslation(translation)
+    checkpoint_dir = checkpoint_directory(input_path, from_code, to_code, translation)
 
     for index, chapter in enumerate(source_chapters):
         chapter_title = str(chapter.get("title", "") or f"Capitulo {index + 1}")
@@ -651,12 +864,16 @@ def translate_book(from_code, to_code, input_path, output_path):
                 "message": f"Traduzindo {chapter_title}",
             }
         )
-        translated_chapters.append(
-            {
+        checkpoint_path = checkpoint_dir / f"{index:08d}.json"
+        translated = load_checkpoint(checkpoint_path, index)
+        if translated is None:
+            translated = {
                 "title": translate_document(translation, chapter_title),
                 "content": translate_document(translation, str(chapter.get("content", "") or "")),
             }
-        )
+            atomic_json(checkpoint_path, {"index": index, **translated,
+                                           "digest": checkpoint_hash(translated["title"], translated["content"])})
+        translated_chapters.append(translated)
 
     output = {
         "title": translate_document(translation, str(payload.get("title", "") or "")),
@@ -664,8 +881,7 @@ def translate_book(from_code, to_code, input_path, output_path):
         "chapters": translated_chapters,
     }
 
-    with open(output_path, "w", encoding="utf-8") as fh:
-        json.dump(output, fh, ensure_ascii=False)
+    atomic_json(Path(output_path), output)
 
     emit(
         {
@@ -679,6 +895,9 @@ def translate_book(from_code, to_code, input_path, output_path):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     if len(sys.argv) < 2:
         raise SystemExit("missing command")
 
@@ -692,7 +911,8 @@ def main():
     elif command == "translate-book":
         if len(sys.argv) < 6:
             raise SystemExit("missing translate-book args")
-        translate_book(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
+        translate_book(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5],
+                       int(sys.argv[6]) if len(sys.argv) > 6 else None)
     else:
         raise SystemExit(f"unknown command: {command}")
 

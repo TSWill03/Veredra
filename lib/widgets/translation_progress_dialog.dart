@@ -8,10 +8,12 @@ class TranslationProgressDialog extends StatelessWidget {
     super.key,
     required this.bookTitle,
     required this.progress,
+    this.onPause,
   });
 
   final String bookTitle;
   final TranslationProgress progress;
+  final VoidCallback? onPause;
 
   @override
   Widget build(BuildContext context) {
@@ -19,6 +21,12 @@ class TranslationProgressDialog extends StatelessWidget {
 
     return AlertDialog(
       title: const Text('Traduzindo livro'),
+      actions: <Widget>[
+        if (onPause != null)
+          TextButton(
+              onPressed: onPause,
+              child: const Text('Pausar e salvar progresso')),
+      ],
       content: SizedBox(
         width: 460,
         child: Column(
