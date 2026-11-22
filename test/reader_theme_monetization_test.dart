@@ -26,12 +26,10 @@ void main() {
   );
 
   test('temas premium nao podem ser carregados como presets gratuitos', () {
-    final Set<String> freeIds = ReaderBackgroundPreset.values
-        .map((preset) => preset.name)
-        .toSet();
-    final Set<String> premiumIds = ReaderPremiumTheme.previews
-        .map((theme) => theme.id)
-        .toSet();
+    final Set<String> freeIds =
+        ReaderBackgroundPreset.values.map((preset) => preset.name).toSet();
+    final Set<String> premiumIds =
+        ReaderPremiumTheme.previews.map((theme) => theme.id).toSet();
 
     expect(premiumIds.length, ReaderPremiumTheme.previews.length);
     expect(premiumIds.intersection(freeIds), isEmpty);
